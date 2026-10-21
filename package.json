@@ -2,7 +2,7 @@
   "name": "cafe-empire",
   "private": true,
   "version": "1.0.0",
-  "description": "REAL LIFE TYCOON: Café Empire — permainan simulasi perniagaan kafe (mobile-first).",
+  "description": "REAL LIFE TYCOON: Caf\u00e9 Empire \u2014 permainan simulasi perniagaan kafe (mobile-first).",
   "type": "module",
   "engines": {
     "node": ">=20.19"
@@ -11,9 +11,10 @@
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.e2e.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource/fraunces": "5.1.1",
@@ -23,7 +24,9 @@
     "recharts": "2.15.4"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "@tailwindcss/vite": "4.1.18",
+    "@types/node": "22.19.1",
     "@types/react": "18.3.26",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "4.7.0",

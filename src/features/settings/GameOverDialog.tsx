@@ -7,7 +7,7 @@ import { Money } from '../../components/Money';
 
 /** Shown when the café goes bankrupt. Players can still browse their reports afterwards. */
 export function GameOverDialog() {
-  const { game, resetGame } = useGame();
+  const { game, store, resetGame } = useGame();
   // Dismissal is tied to this particular game and day, so a later bankruptcy always shows the dialog again.
   const gameKey = `${game.seed}:${game.day}`;
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
@@ -15,7 +15,9 @@ export function GameOverDialog() {
   // (e.g. another tab loaded newer progress) it closes instead of wiping the new game.
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const bankrupt = game.status === 'bankrupt';
-  const open = bankrupt && dismissedKey !== gameKey;
+  // Let the player watch (or skip) the final day's replay before announcing the bankruptcy.
+  const replaying = store.justSettledDay !== null;
+  const open = bankrupt && !replaying && dismissedKey !== gameKey;
   const confirming = bankrupt && confirmKey === gameKey;
 
   return (

@@ -16,7 +16,8 @@ Requires Node.js 20.19 or newer.
 npm install          # install pinned dependencies
 npm run dev          # start the dev server (http://localhost:5173)
 npm test             # run the Vitest suite once
-npm run typecheck    # strict TypeScript check
+npm run test:e2e     # Playwright end-to-end tests (builds and serves the app on port 4174)
+npm run typecheck    # strict TypeScript check (app and e2e code)
 npm run build        # typecheck + production build into dist/
 npm run preview      # serve the production build (http://localhost:4173)
 ```
@@ -160,6 +161,23 @@ There are 93 tests in 7 suites (`src/game/__tests__`):
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
 | `selectors.test.ts` | stock levels, restock plan, forecast never leaks surprises, price preview, hire capacity gain with upgrades, reputation display, chart series, compact labels |
 
+### End-to-end tests
+
+```bash
+npm run test:e2e
+```
+
+`e2e/` contains a Playwright suite (Chromium, 360×740 touch viewport) that runs against the production build:
+
+| Spec | Covers |
+|---|---|
+| `core-loop.spec.ts` | starting state; buy stock → edit price → open → reconciled report → refresh keeps progress → next day; double-tap settles once; no-stock confirmation; leaving the replay |
+| `screens.spec.ts` | no horizontal overflow and no touch target under 40px on every screen at 360/390/768px; menu, inventory (low stock, insufficient funds), staff hiring, finance charts/table/report sheet/ledger, share-card download |
+| `persistence.spec.ts` | corrupt-save backup and recovery, v1 migration, confirmed reset, bankruptcy and confirmed restart |
+| `multi-tab-and-dialogs.spec.ts` | second tab follows the first, stale-tab action and manual save never overwrite newer progress, toasts never cover dialog buttons or the sheet's close button, Escape closes only the top dialog |
+
+CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e suite on every push and pull request.
+
 **Manual verification (Playwright, Chromium, 360×740 touch):** dashboard → restock (confirm + toast) → price edit and save → open café → live playback → report → **browser refresh keeps the report and day** → next day → staff, upgrades, objectives, finance (charts, reports sheet, ledger) → settings → insufficient-funds state → corrupt-save recovery → share-card PNG download → negative-cash warning → bankruptcy → confirmed restart. Two tabs on one save were also checked: the second tab follows the first live, and a tab that missed the update adopts the newer save instead of acting on stale data. In nested dialogs, Escape closes only the top dialog. Opening a dialog clears any toast, and a toast never covers a dialog's buttons or a sheet's close button; tapping a toast only dismisses it. All screens were checked for horizontal overflow at 360, 390 and 768px (none found), touch targets under 40px (none found), and console errors (none). Text colour pairs meet WCAG AA contrast.
 
 ---
@@ -182,17 +200,15 @@ There are 93 tests in 7 suites (`src/game/__tests__`):
 - Single café only. There is no multi-branch "empire" layer, ingredient-level recipes, staff morale, loans or depreciation.
 - Report history keeps the latest 60 days. Lifetime totals are kept in stats.
 - Balance is tuned with a scripted bot over ~45 days and would benefit from playtesting.
-- There are no automated UI/component tests. UI behaviour was verified with scripted Playwright runs and is not part of `npm test`.
 - Not a PWA yet, so it does not work offline after first load unless the browser caches it.
 
 ## Recommended next steps
 
-1. Add Playwright end-to-end tests to the repo and CI (the manual QA flow above is a ready-made script outline).
-2. Add save export/import (JSON file) so players can move between devices without a backend.
-3. Add a PWA manifest and service worker for install and offline play.
-4. Add a second-branch expansion, ingredient-level inventory (beans, milk, tea, pastry), loans and simple depreciation.
-5. Add a weekly summary report and goals for weekends and holidays.
-6. Support localisation (English) through a string table.
+1. Add save export/import (JSON file) so players can move between devices without a backend.
+2. Add a PWA manifest and service worker for install and offline play.
+3. Add a second-branch expansion, ingredient-level inventory (beans, milk, tea, pastry), loans and simple depreciation.
+4. Add a weekly summary report and goals for weekends and holidays.
+5. Support localisation (English) through a string table.
 
 ### Note on dependency pinning
 
