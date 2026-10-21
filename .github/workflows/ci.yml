@@ -13,7 +13,9 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56 (matching the pinned @playwright/test) does not support the newer
+    # Ubuntu image that ubuntu-latest resolves to, so browser installation fails there.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
