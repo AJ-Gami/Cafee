@@ -33,6 +33,13 @@ export function NavProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => writeHash(state), [state]);
 
+  // Follow manual URL edits and deep links opened while the app is running.
+  useEffect(() => {
+    const onHashChange = () => setState(parseHash(window.location.hash));
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
   const go = useCallback((tab: TabId, sub: string | null = null) => {
     setState({ tab, sub });
     window.scrollTo({ top: 0 });

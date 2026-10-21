@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "description": "REAL LIFE TYCOON: Café Empire — permainan simulasi perniagaan kafe (mobile-first).",
   "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
