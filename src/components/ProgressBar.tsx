@@ -25,7 +25,7 @@ export function ProgressBar({
       aria-label={label}
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-valuenow={Math.round(pct)}
+      aria-valuenow={Math.floor(pct)}
       className={`h-2 w-full overflow-hidden rounded-full bg-cream-300/70 ${className}`}
     >
       <div className={`h-full rounded-full transition-[width] duration-500 ${colors[tone]}`} style={{ width: `${pct}%` }} />

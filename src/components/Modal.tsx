@@ -9,15 +9,15 @@ const modalStack: symbol[] = [];
 const stackListeners = new Set<() => void>();
 const notifyStack = () => stackListeners.forEach((l) => l());
 
-/** True while any dialog or sheet is open (used to keep toasts clear of modal headers). */
-export function useAnyModalOpen(): boolean {
+/** Number of dialogs and sheets currently open (0 when none). */
+export function useOpenModalCount(): number {
   return useSyncExternalStore(
     (listener) => {
       stackListeners.add(listener);
       return () => stackListeners.delete(listener);
     },
-    () => modalStack.length > 0,
-    () => false,
+    () => modalStack.length,
+    () => 0,
   );
 }
 
@@ -106,7 +106,10 @@ export function Dialog({
   );
 }
 
-/** Full-height bottom sheet for detailed content (settings, past reports). */
+/**
+ * Tall bottom sheet for detailed content (settings, past reports). Its top edge always leaves
+ * room for a toast so feedback never covers the sheet's title or close button.
+ */
 export function Sheet({
   open,
   onClose,
@@ -132,7 +135,7 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative flex max-h-[92dvh] w-full max-w-md animate-fade-up flex-col rounded-t-3xl bg-cream-100 shadow-lift"
+        className="relative flex max-h-[calc(100dvh-7.5rem-env(safe-area-inset-top,0px))] w-full max-w-md animate-fade-up flex-col rounded-t-3xl bg-cream-100 shadow-lift"
       >
         <div className="flex items-center justify-between gap-3 border-b border-espresso-800/10 px-4 py-2">
           <h2 id={titleId} className="font-display text-xl text-espresso-800">

@@ -7,6 +7,7 @@ import {
   capacityAfterHire,
   dayEstimate,
   hiringCandidates,
+  objectiveViews,
   prepChecklist,
   previewPrice,
   pricePerception,
@@ -78,6 +79,9 @@ describe('selectors', () => {
   });
 
   it('never displays a reputation milestone that has not been reached', () => {
+    const near = objectiveViews({ ...newGame(), reputation: 69.9 }).find((o) => o.id === 'rep_70');
+    expect(near?.current).toBe(69);
+    expect(near?.complete).toBe(false);
     expect(reputationPoints(69.6)).toBe(69);
     expect(reputationPoints(70)).toBe(70);
     expect(reputationPoints(50)).toBe(50);

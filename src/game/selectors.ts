@@ -8,7 +8,7 @@ import { OBJECTIVES } from './data/objectives';
 import { PRODUCTS } from './data/products';
 import { PROMOTION_ORDER, PROMOTIONS, type PromotionDef } from './data/promotions';
 import { UPGRADE_ORDER, UPGRADES, type UpgradeDef } from './data/upgrades';
-import { estimateDemand, modifiersForState, salePrice, type DemandEstimate } from './demand';
+import { estimateDemand, modifiersForState, reputationPoints, salePrice, type DemandEstimate } from './demand';
 import { averageUnitCost, canAfford, inventoryValue, projectedFixedCosts, quotePurchase, todaysUnitCost } from './economy';
 import { isEventVisibleInPrep, resolveEvent } from './events';
 import { formatRM, marginPercent } from './money';
@@ -183,7 +183,9 @@ export interface ObjectiveView {
 export function objectiveViews(state: GameState): ObjectiveView[] {
   return OBJECTIVES.map((o) => {
     const complete = isObjectiveComplete(state, o.id);
-    const current = complete ? o.target : Math.min(o.target, Math.max(0, o.progress(state)));
+    // Reputation is shown in whole points (rounded down) so progress never looks complete early.
+    const raw = o.unit === 'points' ? reputationPoints(o.progress(state)) : o.progress(state);
+    const current = complete ? o.target : Math.min(o.target, Math.max(0, raw));
     return { id: o.id, title: o.title, description: o.description, xp: o.xp, target: o.target, current, unit: o.unit, complete };
   });
 }
