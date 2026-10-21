@@ -17,7 +17,7 @@ export interface StoredSave {
     cafeName: string;
     history: { day: number; netProfitSen: number }[];
     staff: { id: string; name: string }[];
-    dayStart: { cashSen: number; inventorySen: number; staffNames?: string[] };
+    dayStart: { cashSen: number; inventorySen: number; debtSen: number; staffNames?: string[] };
     stats: { negativeCashStreak: number };
     products: Record<string, { stock: number; stockValueSen: number; priceSen: number }>;
   };

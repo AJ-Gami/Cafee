@@ -12,6 +12,7 @@ import { Notice } from '../../components/Notice';
 import { ProgressBar } from '../../components/ProgressBar';
 import { Stat } from '../../components/Stat';
 import { reputationPoints, weekdayName } from '../../game/demand';
+import { remainingPrincipal } from '../../game/loans';
 import { formatRM } from '../../game/money';
 import { levelInfo } from '../../game/objectives';
 import { historySeries } from '../../game/reports';
@@ -100,7 +101,11 @@ export function DashboardScreen() {
           label="Baki tunai"
           icon={<Wallet className="size-3.5" aria-hidden="true" />}
           value={<Money sen={game.cashSen} tabular={false} className={game.cashSen < 0 ? 'text-rust-700' : ''} />}
-          hint={`Nilai inventori ${formatRM(currentInventoryValue(game))}`}
+          hint={
+            game.loan
+              ? `Inventori ${formatRM(currentInventoryValue(game))} · Hutang ${formatRM(remainingPrincipal(game.loan))}`
+              : `Nilai inventori ${formatRM(currentInventoryValue(game))}`
+          }
         />
         <Stat
           label={report ? `Jualan H${report.day}` : 'Jualan harian'}

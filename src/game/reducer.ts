@@ -13,12 +13,23 @@ import {
   purchaseStock,
   purchaseStockBatch,
   renameCafe,
+  repayLoan,
   setPrice,
   setProductEnabled,
   setPromotion,
   startNextDay,
+  takeLoan,
 } from './engine';
-import type { EngineErrorCode, EngineResult, GameState, ObjectiveId, ProductId, PromotionId, UpgradeId } from './types';
+import type {
+  EngineErrorCode,
+  EngineResult,
+  GameState,
+  LoanOfferId,
+  ObjectiveId,
+  ProductId,
+  PromotionId,
+  UpgradeId,
+} from './types';
 
 export type GameAction =
   | { type: 'PURCHASE'; productId: ProductId; quantity: number }
@@ -29,6 +40,8 @@ export type GameAction =
   | { type: 'HIRE'; candidateId: string }
   | { type: 'FIRE'; staffId: string }
   | { type: 'BUY_UPGRADE'; upgradeId: UpgradeId }
+  | { type: 'TAKE_LOAN'; offerId: LoanOfferId }
+  | { type: 'REPAY_LOAN' }
   | { type: 'OPEN_CAFE'; day: number }
   | { type: 'START_NEXT_DAY'; day: number }
   | { type: 'RENAME'; name: string }
@@ -95,6 +108,10 @@ export function gameReducer(store: GameStore, action: GameAction): GameStore {
       return apply(store, fireStaff(g, action.staffId));
     case 'BUY_UPGRADE':
       return apply(store, buyUpgrade(g, action.upgradeId));
+    case 'TAKE_LOAN':
+      return apply(store, takeLoan(g, action.offerId));
+    case 'REPAY_LOAN':
+      return apply(store, repayLoan(g));
     case 'OPEN_CAFE': {
       const result = openCafe(g, action.day);
       // The report screen itself is the feedback for a settled day.

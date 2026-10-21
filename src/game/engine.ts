@@ -31,6 +31,8 @@ import {
 } from './economy';
 import { resolveEvent, rollEventForDay, type ResolvedEvent } from './events';
 import { applyBps, formatRM, sumSen } from './money';
+import { LOAN_OFFERS } from './data/loans';
+import { afterInstallment, installmentDue, newLoan, remainingPrincipal, settlementQuote } from './loans';
 import { currentLevel, evaluateObjectives } from './objectives';
 import { dayRng, RNG_PURPOSE } from './rng';
 import { baristaCount, candidatesForState, hourlyCapacity, staffSlots } from './staff';
@@ -48,6 +50,7 @@ import type {
   TimelineEntry,
   Transaction,
   TransactionType,
+  LoanOfferId,
   UpgradeId,
 } from './types';
 import { PRODUCT_IDS } from './types';
@@ -156,7 +159,7 @@ export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME
     upgrades: [],
     promotion: 'none',
     todayEventId: rollEventForDay(seed >>> 0, 1),
-    dayStart: { cashSen: STARTING_CASH_SEN, inventorySen: inventoryValue(products), staffNames: [STARTING_STAFF.name] },
+    dayStart: { cashSen: STARTING_CASH_SEN, inventorySen: inventoryValue(products), debtSen: 0, staffNames: [STARTING_STAFF.name] },
     dayTransactions: [],
     txSeq: 1,
     lastSettledDay: 0,
@@ -172,7 +175,9 @@ export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME
       profitStreak: 0,
       perfectServiceDays: 0,
       negativeCashStreak: 0,
+      loansRepaid: 0,
     },
+    loan: null,
   };
 }
 
@@ -339,6 +344,48 @@ export function buyUpgrade(state: GameState, upgradeId: UpgradeId): EngineResult
   return succeed(next, `${def.name} dipasang!`);
 }
 
+function isLoanOfferId(value: unknown): value is LoanOfferId {
+  return typeof value === 'string' && value in LOAN_OFFERS;
+}
+
+/** Borrow from the bank. Installments start at the close of the next day. */
+export function takeLoan(state: GameState, offerId: LoanOfferId): EngineResult {
+  const blocked = guardPrep(state);
+  if (blocked) return blocked;
+  if (!isLoanOfferId(offerId)) return fail('UNKNOWN_ITEM', 'Tawaran pinjaman tidak dikenali.');
+  if (state.loan) return fail('LOAN_ACTIVE', 'Lunaskan pinjaman semasa sebelum mengambil pinjaman baharu.');
+  const def = LOAN_OFFERS[offerId];
+  if (currentLevel(state) < def.minLevel) return fail('LOCKED', `Pinjaman ini dibuka pada Tahap ${def.minLevel}.`);
+  let next: GameState = { ...state, loan: newLoan(offerId, state.day) };
+  next = withTransaction(next, 'loan_proceeds', def.principalSen, `Pinjaman diterima: ${def.name}`);
+  return succeed(next, `${def.name} sebanyak ${formatRM(def.principalSen)} diterima. Bayaran harian bermula esok.`);
+}
+
+/**
+ * Pay off the remaining principal now, plus the interest for the day already traded on the loan.
+ * Later installments are waived. Repaying on the day the loan was taken simply cancels it.
+ */
+export function repayLoan(state: GameState): EngineResult {
+  const blocked = guardPrep(state);
+  if (blocked) return blocked;
+  if (!state.loan) return fail('NO_LOAN', 'Tiada pinjaman untuk dibayar.');
+  const quote = settlementQuote(state.loan, state.day);
+  if (quote.totalSen > state.cashSen) return insufficient(quote.totalSen, state.cashSen);
+  const def = LOAN_OFFERS[state.loan.offerId];
+  let next: GameState = {
+    ...state,
+    loan: null,
+    stats: { ...state.stats, loansRepaid: state.stats.loansRepaid + (quote.cancellation ? 0 : 1) },
+  };
+  if (quote.cancellation) {
+    next = withTransaction(next, 'loan_principal', -quote.principalSen, `Pinjaman dibatalkan: ${def.name}`);
+    return succeed(next, `${def.name} dibatalkan dan ${formatRM(quote.principalSen)} dipulangkan kepada bank.`);
+  }
+  if (quote.interestSen > 0) next = withTransaction(next, 'loan_interest', -quote.interestSen, `Faedah penyelesaian awal: ${def.name}`);
+  next = withTransaction(next, 'loan_principal', -quote.principalSen, `Penyelesaian awal: ${def.name}`);
+  return succeed(next, `${def.name} dilunaskan (${formatRM(quote.totalSen)}). Tiada faedah lagi dikenakan.`);
+}
+
 export function renameCafe(state: GameState, name: string): EngineResult {
   const clean = sanitizeCafeName(name);
   if (!clean) return fail('INVALID_QUANTITY', `Nama kafe mesti 1–${CAFE_NAME_MAX_LENGTH} aksara.`);
@@ -450,6 +497,18 @@ export function openCafe(state: GameState, day: number): EngineResult {
   addTx('rent', -rentSen, 'Sewa premis');
   addTx('utilities', -utilitiesSen, 'Elektrik & air');
 
+  // Loan installment, charged even if cash runs short (which counts toward bankruptcy).
+  let loanAfter = state.loan;
+  let loanRepaidToday = false;
+  const due = installmentDue(state.loan, day);
+  if (state.loan && due) {
+    const name = LOAN_OFFERS[state.loan.offerId].name;
+    addTx('loan_interest', -due.interestSen, `Faedah ${name} (${due.number}/${state.loan.termDays})`);
+    addTx('loan_principal', -due.principalSen, `Pokok ${name} (${due.number}/${state.loan.termDays})`);
+    loanAfter = afterInstallment(state.loan, due);
+    loanRepaidToday = loanAfter === null;
+  }
+
   const prepTx = state.dayTransactions;
   const allTx = [...prepTx, ...settlement];
   const closingCashSen = state.cashSen + sumSen(settlement.map((t) => t.amountSen));
@@ -471,9 +530,10 @@ export function openCafe(state: GameState, day: number): EngineResult {
     hiringSen: paidFor('hiring'),
     eventCostSen: paidFor('event_cost'),
     spoilageSen,
+    interestSen: paidFor('loan_interest'),
     otherSen: 0,
   };
-  expenses.otherSen = expenses.hiringSen + expenses.eventCostSen + expenses.spoilageSen;
+  expenses.otherSen = expenses.hiringSen + expenses.eventCostSen + expenses.spoilageSen + expenses.interestSen;
   const totalExpensesSen =
     expenses.wagesSen + expenses.rentSen + expenses.utilitiesSen + expenses.marketingSen + expenses.otherSen;
   const grossProfitSen = revenueSen - cogsSen;
@@ -556,6 +616,10 @@ export function openCafe(state: GameState, day: number): EngineResult {
     closingCashSen,
     stockPurchasesSen: paidFor('stock_purchase'),
     capexSen: paidFor('upgrade'),
+    loanProceedsSen: totalOf('loan_proceeds'),
+    loanPrincipalRepaidSen: paidFor('loan_principal'),
+    openingDebtSen: state.dayStart.debtSen,
+    closingDebtSen: remainingPrincipal(loanAfter),
     openingInventorySen: state.dayStart.inventorySen,
     closingInventorySen: inventoryValue(products),
     reputationBefore: state.reputation,
@@ -581,6 +645,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     profitStreak: netProfitSen > 0 ? state.stats.profitStreak + 1 : 0,
     perfectServiceDays: state.stats.perfectServiceDays + (!anyStockout && sim.customers.served >= 50 ? 1 : 0),
     negativeCashStreak,
+    loansRepaid: state.stats.loansRepaid + (loanRepaidToday ? 1 : 0),
   };
 
   const settled: GameState = {
@@ -594,6 +659,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     dayTransactions: [],
     lastSettledDay: day,
     stats,
+    loan: loanAfter,
   };
 
   const evaluated = evaluateObjectives(settled);
@@ -627,7 +693,12 @@ export function startNextDay(state: GameState, day: number): EngineResult {
     phase: 'prep',
     promotion: 'none',
     todayEventId: rollEventForDay(state.seed, nextDay),
-    dayStart: { cashSen: state.cashSen, inventorySen: inventoryValue(state.products), staffNames: state.staff.map((s) => s.name) },
+    dayStart: {
+      cashSen: state.cashSen,
+      inventorySen: inventoryValue(state.products),
+      debtSen: remainingPrincipal(state.loan),
+      staffNames: state.staff.map((s) => s.name),
+    },
     dayTransactions: [],
   };
   return succeed(next, `Selamat pagi! Hari ${nextDay} (${weekdayName(nextDay)}) bermula.`);

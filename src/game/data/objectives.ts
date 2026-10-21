@@ -1,4 +1,8 @@
+import { remainingPrincipal } from '../loans';
 import type { GameState, ObjectiveId } from '../types';
+
+/** Cash minus loan principal still owed, so borrowed money never counts as savings. */
+const netCash = (s: GameState): number => s.cashSen - remainingPrincipal(s.loan);
 
 export interface ObjectiveDef {
   id: ObjectiveId;
@@ -88,11 +92,11 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
   {
     id: 'cash_8000',
     title: 'Simpanan RM8,000',
-    description: 'Kumpul baki tunai RM8,000.',
+    description: 'Kumpul baki tunai RM8,000 (selepas tolak baki pinjaman).',
     xp: 20,
     target: 800_000,
     unit: 'sen',
-    progress: (s) => s.cashSen,
+    progress: netCash,
   },
   {
     id: 'profit_streak_5',
@@ -133,11 +137,20 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
   {
     id: 'cash_25000',
     title: 'Empayar Kafe',
-    description: 'Kumpul baki tunai RM25,000.',
+    description: 'Kumpul baki tunai RM25,000 (selepas tolak baki pinjaman).',
     xp: 40,
     target: 2_500_000,
     unit: 'sen',
-    progress: (s) => s.cashSen,
+    progress: netCash,
+  },
+  {
+    id: 'repay_loan',
+    title: 'Bebas hutang',
+    description: 'Lunaskan pinjaman bank sepenuhnya.',
+    xp: 15,
+    target: 1,
+    unit: 'count',
+    progress: (s) => s.stats.loansRepaid,
   },
 ];
 

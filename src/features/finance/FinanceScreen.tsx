@@ -12,16 +12,18 @@ import { Segmented, tabPanelProps } from '../../components/Segmented';
 import { Stat } from '../../components/Stat';
 import { HISTORY_LIMIT } from '../../game/constants';
 import { weekdayName } from '../../game/demand';
+import { remainingPrincipal } from '../../game/loans';
 import { historySeries } from '../../game/reports';
 import { currentInventoryValue, lastReport, reportForDay } from '../../game/selectors';
 import { DayReportView, TransactionList } from '../reports/DayReportView';
 import { CashChart, RevenueProfitChart } from './LazyCharts';
+import { LoanPanel } from './LoanPanel';
 
-type FinanceTab = 'ringkasan' | 'laporan' | 'lejar';
+type FinanceTab = 'ringkasan' | 'laporan' | 'lejar' | 'pinjaman';
 
 export function FinanceScreen() {
   const { sub, setSub } = useNav();
-  const tab: FinanceTab = sub === 'laporan' || sub === 'lejar' ? sub : 'ringkasan';
+  const tab: FinanceTab = sub === 'laporan' || sub === 'lejar' || sub === 'pinjaman' ? sub : 'ringkasan';
   return (
     <div className="space-y-4">
       <ScreenTitle title="Kewangan & laporan" subtitle="Semua angka ialah data simulasi permainan." />
@@ -34,12 +36,14 @@ export function FinanceScreen() {
           { id: 'ringkasan', label: 'Ringkasan' },
           { id: 'laporan', label: 'Laporan' },
           { id: 'lejar', label: 'Lejar' },
+          { id: 'pinjaman', label: 'Pinjaman' },
         ]}
       />
       <div {...tabPanelProps('kewangan-tabs', tab)}>
         {tab === 'ringkasan' && <SummaryPanel />}
         {tab === 'laporan' && <ReportsPanel />}
         {tab === 'lejar' && <LedgerPanel />}
+        {tab === 'pinjaman' && <LoanPanel />}
       </div>
     </div>
   );
@@ -64,6 +68,7 @@ function SummaryPanel() {
       <Card>
         <dl className="divide-y divide-espresso-800/[0.07]">
           <Row label="Nilai inventori" value={<Money sen={currentInventoryValue(game)} />} />
+          {game.loan ? <Row label="Baki pokok pinjaman" value={<Money sen={-remainingPrincipal(game.loan)} />} /> : null}
           <Row label={`Jumlah hasil (${s.daysCompleted} hari)`} value={<Money sen={s.totalRevenueSen} />} />
           <Row label={`Jumlah untung bersih (${s.profitableDays} hari untung)`} value={<Money sen={s.totalNetProfitSen} colored />} strong />
         </dl>

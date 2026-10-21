@@ -30,7 +30,7 @@ test('a v1 prototype save is migrated on load', async ({ page }) => {
   await page.reload();
   await expect(page.getByText('Simpanan versi 1 telah dikemas kini ke format terkini.')).toBeVisible();
   await expect(page.locator('header')).toContainText('RM4,321.50');
-  expect((await readSave(page))?.schemaVersion).toBe(2);
+  expect((await readSave(page))?.schemaVersion).toBe(3);
 });
 
 test('reset requires confirmation and then clears all progress', async ({ page }) => {

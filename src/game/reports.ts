@@ -19,6 +19,9 @@ export interface Reconciliation {
   checks: ReconciliationCheck[];
 }
 
+/** Cash payments for running the café (loan interest included; principal is financing). */
+const OPERATING_PAYMENT_TYPES: readonly TransactionType[] = ['wages', 'rent', 'utilities', 'marketing', 'hiring', 'event_cost', 'loan_interest'];
+
 function txTotal(report: DayReport, ...types: TransactionType[]): number {
   return sumSen(report.transactions.filter((t) => types.includes(t.type)).map((t) => t.amountSen));
 }
@@ -64,14 +67,14 @@ export function reconcileReport(report: DayReport): Reconciliation {
     {
       id: 'expenses-cash',
       label: 'Perbelanjaan tunai = transaksi perbelanjaan',
-      expectedSen: e.wagesSen + e.rentSen + e.utilitiesSen + e.marketingSen + e.hiringSen + e.eventCostSen,
-      actualSen: -txTotal(report, 'wages', 'rent', 'utilities', 'marketing', 'hiring', 'event_cost'),
+      expectedSen: e.wagesSen + e.rentSen + e.utilitiesSen + e.marketingSen + e.hiringSen + e.eventCostSen + e.interestSen,
+      actualSen: -txTotal(report, ...OPERATING_PAYMENT_TYPES),
     },
     {
       id: 'other',
-      label: 'Lain-lain = pengambilan + kos peristiwa + pembaziran',
+      label: 'Lain-lain = pengambilan + kos peristiwa + pembaziran + faedah',
       expectedSen: e.otherSen,
-      actualSen: e.hiringSen + e.eventCostSen + lineSpoilage,
+      actualSen: e.hiringSen + e.eventCostSen + lineSpoilage + e.interestSen,
     },
     {
       id: 'net',
@@ -86,11 +89,27 @@ export function reconcileReport(report: DayReport): Reconciliation {
       actualSen: report.openingInventorySen + report.stockPurchasesSen - report.cogsSen - e.spoilageSen,
     },
     {
+      id: 'financing',
+      label: 'Transaksi pinjaman = pinjaman diterima − bayaran pokok',
+      expectedSen: report.loanProceedsSen - report.loanPrincipalRepaidSen,
+      actualSen: txTotal(report, 'loan_proceeds', 'loan_principal'),
+    },
+    {
+      id: 'debt',
+      label: 'Hutang awal + pinjaman baharu − bayaran pokok = hutang akhir',
+      expectedSen: report.closingDebtSen,
+      actualSen: report.openingDebtSen + report.loanProceedsSen - report.loanPrincipalRepaidSen,
+    },
+    {
       id: 'bridge',
-      label: 'Untung bersih − kenaikan inventori − pelaburan = perubahan tunai',
+      label: 'Untung bersih − kenaikan inventori − pelaburan + pinjaman bersih = perubahan tunai',
       expectedSen: report.closingCashSen - report.openingCashSen,
       actualSen:
-        report.netProfitSen - (report.closingInventorySen - report.openingInventorySen) - report.capexSen,
+        report.netProfitSen -
+        (report.closingInventorySen - report.openingInventorySen) -
+        report.capexSen +
+        report.loanProceedsSen -
+        report.loanPrincipalRepaidSen,
     },
   ].map((c) => ({ ...c, ok: c.expectedSen === c.actualSen }));
 
@@ -101,19 +120,23 @@ export interface CashFlowSummary {
   salesReceiptsSen: number;
   otherIncomeSen: number;
   stockPurchasesSen: number;
+  /** Wages, rent, utilities, marketing, hiring, event costs and loan interest. */
   operatingPaymentsSen: number;
   capexSen: number;
+  loanProceedsSen: number;
+  loanPrincipalRepaidSen: number;
   netChangeSen: number;
 }
 
 export function cashFlowSummary(report: DayReport): CashFlowSummary {
-  const operatingPaymentsSen = -txTotal(report, 'wages', 'rent', 'utilities', 'marketing', 'hiring', 'event_cost');
   return {
     salesReceiptsSen: txTotal(report, 'sale'),
     otherIncomeSen: txTotal(report, 'event_income'),
     stockPurchasesSen: report.stockPurchasesSen,
-    operatingPaymentsSen,
+    operatingPaymentsSen: -txTotal(report, ...OPERATING_PAYMENT_TYPES),
     capexSen: report.capexSen,
+    loanProceedsSen: report.loanProceedsSen,
+    loanPrincipalRepaidSen: report.loanPrincipalRepaidSen,
     netChangeSen: report.closingCashSen - report.openingCashSen,
   };
 }

@@ -9,8 +9,12 @@
  *       products: [{ id, price, cost, stock, enabled }], staff: [{ id, name,
  *       role, wage }], upgrades }` with money stored as ringgit decimals and no
  *       ledger, reports or stats.
- *   v2 (current): envelope `{ schemaVersion: 2, savedAt, game }`, all money in
- *       integer sen, transaction ledger, daily reports and stats.
+ *   v2: envelope `{ schemaVersion: 2, savedAt, game }`, all money in integer
+ *       sen, transaction ledger, daily reports and stats.
+ *   v3 (current): adds bank loans — `game.loan`, `dayStart.debtSen`,
+ *       `stats.loansRepaid`, loan transaction types, and per-report
+ *       `loanProceedsSen`, `loanPrincipalRepaidSen`, `openingDebtSen`,
+ *       `closingDebtSen` and `expenses.interestSen`.
  */
 import { MAX_PRICE_SEN, MAX_STOCK_PER_PRODUCT, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
 import { UPGRADES } from './data/upgrades';
@@ -111,7 +115,7 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
-/** v1 prototype save -> v2 game state. */
+/** v1 prototype save -> v2 game state (built on today's new-game defaults, so later migrations are no-ops on it). */
 function migrateV1toV2(v1: Obj): GameState {
   const seed = clampInt(v1.seed, 0, 0xffffffff, 1);
   const base = createNewGame(seed, typeof v1.cafeName === 'string' ? (sanitizeCafeName(v1.cafeName) ?? undefined) : undefined);
@@ -168,8 +172,34 @@ function migrateV1toV2(v1: Obj): GameState {
     staff,
     upgrades,
     lastSettledDay: day - 1,
-    dayStart: { cashSen, inventorySen: inventoryValue(products), staffNames: staff.map((s) => s.name) },
+    dayStart: { cashSen, inventorySen: inventoryValue(products), debtSen: 0, staffNames: staff.map((s) => s.name) },
     stats: { ...base.stats, daysCompleted: day - 1 },
+  };
+}
+
+/** v2 -> v3: no v2 café ever had a loan, so every new loan field starts at zero. */
+function migrateV2toV3(v2: unknown): unknown {
+  if (!isObj(v2)) return v2;
+  return {
+    ...v2,
+    schemaVersion: 3,
+    loan: null,
+    dayStart: isObj(v2.dayStart) ? { ...v2.dayStart, debtSen: 0 } : v2.dayStart,
+    stats: isObj(v2.stats) ? { ...v2.stats, loansRepaid: 0 } : v2.stats,
+    history: Array.isArray(v2.history)
+      ? v2.history.map((r: unknown) =>
+          isObj(r)
+            ? {
+                ...r,
+                loanProceedsSen: 0,
+                loanPrincipalRepaidSen: 0,
+                openingDebtSen: 0,
+                closingDebtSen: 0,
+                expenses: isObj(r.expenses) ? { ...r.expenses, interestSen: 0 } : r.expenses,
+              }
+            : r,
+        )
+      : v2.history,
   };
 }
 
@@ -200,7 +230,10 @@ export function migrateSave(raw: unknown): MigrationResult {
     game = migrateV1toV2(game);
     version = 2;
   }
-  // Future migrations: if (version === 2) { game = migrateV2toV3(game); version = 3; }
+  if (version === 2) {
+    game = migrateV2toV3(game);
+    version = 3;
+  }
   if (version !== SAVE_SCHEMA_VERSION) return { ok: false, error: 'Migrasi simpanan tidak lengkap.' };
   return { ok: true, game, fromVersion };
 }

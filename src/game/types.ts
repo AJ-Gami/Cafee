@@ -55,7 +55,8 @@ export type ObjectiveId =
   | 'serve_1000'
   | 'revenue_1200'
   | 'rep_90'
-  | 'cash_25000';
+  | 'cash_25000'
+  | 'repay_loan';
 
 /** prep = preparing before opening; closed = today has been settled and its report is ready. */
 export type DayPhase = 'prep' | 'closed';
@@ -100,7 +101,13 @@ export type TransactionType =
   | 'event_cost'
   | 'event_income'
   | 'hiring'
-  | 'upgrade';
+  | 'upgrade'
+  /** Cash received from a bank loan (financing, not revenue). */
+  | 'loan_proceeds'
+  /** Interest part of a loan installment (an expense). */
+  | 'loan_interest'
+  /** Principal part of a loan installment or an early repayment (financing, not an expense). */
+  | 'loan_principal';
 
 /** A cash movement. Positive = cash in, negative = cash out. */
 export interface Transaction {
@@ -171,6 +178,8 @@ export interface ExpenseBreakdown {
   eventCostSen: number;
   /** Non-cash write-off of spoiled stock at its carrying value. */
   spoilageSen: number;
+  /** Interest paid on a bank loan. */
+  interestSen: number;
 }
 
 export interface DayReport {
@@ -194,6 +203,12 @@ export interface DayReport {
   closingCashSen: number;
   stockPurchasesSen: number;
   capexSen: number;
+  /** Bank loan money received today (financing inflow). */
+  loanProceedsSen: number;
+  /** Loan principal paid back today (financing outflow). */
+  loanPrincipalRepaidSen: number;
+  openingDebtSen: number;
+  closingDebtSen: number;
 
   openingInventorySen: number;
   closingInventorySen: number;
@@ -219,6 +234,8 @@ export interface GameStats {
   profitStreak: number;
   perfectServiceDays: number;
   negativeCashStreak: number;
+  /** Bank loans paid off in full. */
+  loansRepaid: number;
 }
 
 export interface CompletedObjective {
@@ -229,6 +246,8 @@ export interface CompletedObjective {
 export interface DayStartSnapshot {
   cashSen: number;
   inventorySen: number;
+  /** Loan principal still owed when the day started. */
+  debtSen: number;
   /**
    * Names of the team when the day started. They are reserved for the whole day so hiring or
    * firing during preparation never renames today's candidates. Absent in older saves.
@@ -261,6 +280,23 @@ export interface GameState {
   history: DayReport[];
   completedObjectives: CompletedObjective[];
   stats: GameStats;
+  /** The café's bank loan, if one is being repaid. At most one at a time. */
+  loan: ActiveLoan | null;
+}
+
+export type LoanOfferId = 'mikro' | 'perniagaan' | 'pengembangan';
+
+export interface ActiveLoan {
+  offerId: LoanOfferId;
+  principalSen: number;
+  /** Flat interest for the whole term, fixed when the loan is taken. */
+  totalInterestSen: number;
+  termDays: number;
+  takenDay: number;
+  /** Installments already paid (each at a day's close, starting the day after the loan is taken). */
+  paymentsMade: number;
+  principalRepaidSen: number;
+  interestPaidSen: number;
 }
 
 export type EngineErrorCode =
@@ -277,7 +313,9 @@ export type EngineErrorCode =
   | 'LOCKED'
   | 'STORAGE_FULL'
   | 'GAME_OVER'
-  | 'NO_CHANGE';
+  | 'NO_CHANGE'
+  | 'LOAN_ACTIVE'
+  | 'NO_LOAN';
 
 export type EngineResult =
   | { ok: true; state: GameState; message: string; report?: DayReport; newObjectives?: ObjectiveId[] }

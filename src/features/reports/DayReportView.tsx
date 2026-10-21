@@ -25,6 +25,9 @@ export const TX_LABEL: Record<TransactionType, { label: string; tone: Tone }> = 
   event_income: { label: 'Pendapatan lain', tone: 'good' },
   hiring: { label: 'Pengambilan', tone: 'neutral' },
   upgrade: { label: 'Naik taraf', tone: 'info' },
+  loan_proceeds: { label: 'Pinjaman', tone: 'info' },
+  loan_interest: { label: 'Faedah', tone: 'bad' },
+  loan_principal: { label: 'Bayar pinjaman', tone: 'neutral' },
 };
 
 const TONE_DOT: Record<TimelineTone, string> = {
@@ -99,6 +102,7 @@ export function DayReportView({ report }: { report: DayReport }) {
           {e.hiringSen > 0 ? <Row indent muted label="Kos pengambilan staf" value={<Money sen={-e.hiringSen} />} /> : null}
           {e.eventCostSen > 0 ? <Row indent muted label="Kos peristiwa" value={<Money sen={-e.eventCostSen} />} /> : null}
           {e.spoilageSen > 0 ? <Row indent muted label="Pembaziran stok rosak" value={<Money sen={-e.spoilageSen} />} /> : null}
+          {e.interestSen > 0 ? <Row indent muted label="Faedah pinjaman" value={<Money sen={-e.interestSen} />} /> : null}
           <Row label="Jumlah perbelanjaan" value={<Money sen={-report.totalExpensesSen} />} strong />
           <Row label="Untung bersih" value={<Money sen={report.netProfitSen} colored className="text-lg" />} strong />
         </dl>
@@ -113,8 +117,16 @@ export function DayReportView({ report }: { report: DayReport }) {
           <Row label="Belian stok" value={<Money sen={-cash.stockPurchasesSen} />} />
           <Row label="Bayaran operasi" value={<Money sen={-cash.operatingPaymentsSen} />} />
           {cash.capexSen > 0 ? <Row label="Pelaburan naik taraf" value={<Money sen={-cash.capexSen} />} /> : null}
+          {cash.loanProceedsSen > 0 ? <Row label="Pinjaman diterima" value={<Money sen={cash.loanProceedsSen} signed />} /> : null}
+          {cash.loanPrincipalRepaidSen > 0 ? <Row label="Bayaran balik pokok pinjaman" value={<Money sen={-cash.loanPrincipalRepaidSen} />} /> : null}
           <Row label="Tunai akhir hari" value={<Money sen={report.closingCashSen} />} strong />
         </dl>
+        {report.openingDebtSen > 0 || report.closingDebtSen > 0 ? (
+          <p className="mt-2 text-sm text-espresso-700">
+            Baki pinjaman: <Money sen={report.openingDebtSen} /> → <Money sen={report.closingDebtSen} />. Bayaran pokok ialah pembiayaan, bukan
+            perbelanjaan; hanya faedah ditolak daripada untung.
+          </p>
+        ) : null}
         <div className="mt-3 rounded-xl bg-cream-100 p-3 text-sm text-espresso-700">
           <p>
             Inventori: <Money sen={report.openingInventorySen} /> → <Money sen={report.closingInventorySen} />. Stok yang belum dijual

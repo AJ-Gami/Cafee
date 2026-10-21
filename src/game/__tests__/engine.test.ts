@@ -301,10 +301,10 @@ describe('promotions', () => {
   });
 
   it('keeps free promotions available when cash is negative', () => {
-    const broke = { ...newGame(), cashSen: -5_000, dayStart: { cashSen: -5_000, inventorySen: 0 } };
+    const broke = { ...newGame(), cashSen: -5_000, dayStart: { cashSen: -5_000, inventorySen: 0, debtSen: 0 } };
     const discounted = expectOk(setPromotion(broke, 'discount10')).state;
     expect(expectFail(setPromotion(broke, 'social')).error).toBe('INSUFFICIENT_FUNDS');
-    const plain = settle(stockAll({ ...broke, cashSen: 50_000, dayStart: { cashSen: 50_000, inventorySen: 0 } }, 10));
+    const plain = settle(stockAll({ ...broke, cashSen: 50_000, dayStart: { cashSen: 50_000, inventorySen: 0, debtSen: 0 } }, 10));
     expect(plain.report.promotionSkipped).toBe(false);
     const noPromo = settle(broke).report;
     expect(noPromo.promotionSkipped).toBe(false);
@@ -365,7 +365,7 @@ describe('staff', () => {
         ...createNewGame(seed),
         upgrades: ['second_counter'],
         cashSen: 5_000_000,
-        dayStart: { cashSen: 5_000_000, inventorySen: 0, staffNames: ['Aiman'] },
+        dayStart: { cashSen: 5_000_000, inventorySen: 0, debtSen: 0, staffNames: ['Aiman'] },
       };
       for (let day = 0; day < 6; day++) {
         // Hire, then fire a non-founder, then hire again, checking names each step.
@@ -432,7 +432,7 @@ describe('upgrades', () => {
 
 describe('bankruptcy', () => {
   it('ends the game after three consecutive days with negative cash', () => {
-    let s = { ...createNewGame(TEST_SEED), cashSen: -50_000, dayStart: { cashSen: -50_000, inventorySen: 0 } };
+    let s = { ...createNewGame(TEST_SEED), cashSen: -50_000, dayStart: { cashSen: -50_000, inventorySen: 0, debtSen: 0 } };
     for (let i = 0; i < 3; i++) {
       s = settle(s).state;
       if (i < 2) {

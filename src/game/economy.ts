@@ -12,6 +12,7 @@ import {
 } from './constants';
 import { UPGRADES } from './data/upgrades';
 import { resolveEvent } from './events';
+import { installmentDue } from './loans';
 import { applyBps, mulDivRound, sumSen } from './money';
 import type { GameState, ProductId, ProductState, StaffMember, UpgradeId } from './types';
 import { PRODUCT_IDS } from './types';
@@ -112,10 +113,20 @@ export function dailyUtilities(upgrades: readonly UpgradeId[], customersServed: 
   return UTILITIES_BASE_SEN + extra + UTILITIES_PER_CUSTOMER_SEN * Math.max(0, customersServed);
 }
 
-/** Fixed daily running costs known before opening (utilities exclude the per-customer part). */
-export function projectedFixedCosts(state: GameState): { wagesSen: number; rentSen: number; utilitiesBaseSen: number; totalSen: number } {
+/**
+ * Fixed payments known before opening, all charged at today's close: wages, rent, base utilities
+ * (excluding the per-customer part) and any loan installment due.
+ */
+export function projectedFixedCosts(state: GameState): {
+  wagesSen: number;
+  rentSen: number;
+  utilitiesBaseSen: number;
+  loanSen: number;
+  totalSen: number;
+} {
   const wagesSen = dailyWages(state.staff);
   const rentSen = dailyRent();
   const utilitiesBaseSen = dailyUtilities(state.upgrades, 0);
-  return { wagesSen, rentSen, utilitiesBaseSen, totalSen: wagesSen + rentSen + utilitiesBaseSen };
+  const loanSen = installmentDue(state.loan, state.day)?.totalSen ?? 0;
+  return { wagesSen, rentSen, utilitiesBaseSen, loanSen, totalSen: wagesSen + rentSen + utilitiesBaseSen + loanSen };
 }

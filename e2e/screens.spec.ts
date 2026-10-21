@@ -12,6 +12,7 @@ const ROUTES = [
   '#/kewangan/ringkasan',
   '#/kewangan/laporan',
   '#/kewangan/lejar',
+  '#/kewangan/pinjaman',
 ];
 
 for (const width of [360, 390, 768]) {

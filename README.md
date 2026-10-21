@@ -33,6 +33,8 @@ The build uses a relative base (`./`), so you can host `dist/` from any static h
 3. **Close.** Wages, rent and utilities are paid. Unsold croissants (≈40%) and latte milk (≈5%) spoil overnight.
 4. **Review the report.** It includes P&L, cash flow, customer breakdown, product performance, event outcome, timeline, transactions, reconciliation checks and a shareable result card. Then start the next day.
 
+Short of cash? *Kewangan → Pinjaman* offers bank loans (fictional terms). The money arrives at once; from the next day one installment of principal plus flat interest is charged at every close, even if cash runs short. A loan can be cancelled free on the day it is taken, or paid off early later for the remaining principal plus one day's interest.
+
 Objectives award XP. XP raises the café level (Kafe Kecil → Kafe Kejiranan → Kafe Popular → Empayar Kafe), which unlocks higher-tier upgrades and the influencer promotion. If cash stays negative after **3 consecutive closes**, the café goes bankrupt.
 
 ### Starting state
@@ -66,9 +68,10 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Upgrades (9):** capital investments that affect capacity, footfall, demand, spoilage, reputation, utilities, staff slots or supplier cost, gated by café level.
 - **Promotions (5):** none, social media, flyers, a 10% discount, and an influencer (level 2).
 - **Events (15):** forecast events are visible during preparation and apply from opening (weather, festivals, a supplier price spike and more). Surprise events are revealed on opening and take effect from the hour they happen; for example, the espresso machine breaks at 11:00 and the viral post lands at 12:00 (others include a food reviewer, health inspection, bulk office order and power outage). Some are mitigated by upgrades.
-- **Objectives (14) and levels (4).**
-- **Reports:** a reconciled P&L, cash flow, an inventory bridge, 10 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
-- **Finance:** revenue vs net-profit chart, cash chart, table view, expense breakdown, report history and a transaction ledger.
+- **Bank loans (3):** RM2,000 / RM5,000 / RM12,000 over 10 / 20 / 30 days at 5% / 8% / 12% flat interest, gated by café level, one at a time. Installments are exact to the sen (the last one absorbs rounding). Early settlement, a dashboard debt hint and the day's installment in the fixed-cost forecast.
+- **Objectives (15) and levels (4).** Savings objectives count cash net of loan principal, so borrowed money never completes them.
+- **Reports:** a reconciled P&L, cash flow, an inventory bridge, a debt bridge, 12 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
+- **Finance:** revenue vs net-profit chart, cash chart, table view, expense breakdown, report history, a transaction ledger and loans.
 - **Persistence:** a versioned save with autosave after every action, validation, migration, corrupt-save backup and recovery, and confirmed reset (also when restarting after bankruptcy).
 - **Offline & install:** a web app manifest and a build-generated service worker precache every built file (including the lazy charts chunk), so after the first visit the game installs to the home screen and plays fully offline. Pages are fetched network-first so updates arrive whenever online. The worker only handles the game's own shell and files, keeps its caches separate per deployment (so several copies can share an origin), precaches with `cache: 'reload'` so the shell always matches its chunks, and gets a new version whenever any precached file changes.
 - **Backup & device transfer:** Settings can export the save as a JSON file and import one back (validated and migrated exactly like a stored save, with a confirmation before replacing the current game).
@@ -92,13 +95,13 @@ src/
     menu/                  prices & menu toggles
     inventory/             stock purchasing and restock plan
     business/              staff, upgrades, objectives
-    finance/               summary charts (lazy-loaded Recharts), reports list, ledger
+    finance/               summary charts (lazy-loaded Recharts), reports list, ledger, loans
     reports/               end-of-day report, result card, share image renderer
     settings/              settings sheet, game-over dialog
   game/                    ── pure TypeScript engine, no React ──
     types.ts               typed game state, reports, transactions, results
     constants.ts           balancing constants
-    data/                  static products, promotions, upgrades, staff, events, objectives
+    data/                  static products, promotions, upgrades, staff, events, objectives, loans
     money.ts               integer-sen helpers and formatting
     rng.ts                 seeded PRNG, per (seed, day, purpose) streams
     economy.ts             weighted-average inventory, purchase quotes, expenses
@@ -106,6 +109,7 @@ src/
     events.ts              event roll and mitigation
     staff.ts               capacity, slots, daily candidates
     objectives.ts          XP, levels, objective evaluation
+    loans.ts               loan schedule, installments, early settlement
     engine.ts              player actions + once-per-day settlement
     reducer.ts             pure reducer mapping UI actions to the engine
     selectors.ts           read-only views for the UI (estimates, quotes, margins, checklists)
@@ -121,7 +125,7 @@ src/
 - **The UI never calculates financial results.** Components render values from `engine.ts`, `selectors.ts`, `economy.quotePurchase` and `reports.ts`.
 - **Each day is processed exactly once.** `openCafe(state, day)` is rejected unless `day === state.day`, the phase is `prep`, and `lastSettledDay < day`. The reducer is pure, so React StrictMode double-invocation is harmless. Repeated taps are ignored silently, and the button also disables itself.
 - **Determinism.** Events, demand and candidates come from `hash(seed, day, purpose)`. Reloading cannot re-roll a day, and tests use fixed seeds.
-- **Accounting.** Stock purchases reduce cash immediately and increase inventory value. COGS is recognised only when units sell, using weighted-average cost. When the last unit leaves, the remaining value is released, so no rounding residue is left. Spoilage is a non-cash write-off shown under *Lain-lain*. Upgrades are capital spending: they reduce cash but are not expensed.
+- **Accounting.** Stock purchases reduce cash immediately and increase inventory value. COGS is recognised only when units sell, using weighted-average cost. When the last unit leaves, the remaining value is released, so no rounding residue is left. Spoilage is a non-cash write-off shown under *Lain-lain*. Upgrades are capital spending: they reduce cash but are not expensed. Loans are financing: the money received and principal repaid move cash and debt but not profit; only interest is an expense (under *Lain-lain*).
 
 ### Report reconciliation
 
@@ -133,12 +137,14 @@ src/
 - expense lines add up, and cash expenses match their transactions
 - net profit = revenue + other income − COGS − expenses
 - opening inventory + purchases − COGS − spoilage = closing inventory
-- net profit − Δinventory − capex = Δcash
+- loan transactions = loan received − principal repaid
+- opening debt + loan received − principal repaid = closing debt
+- net profit − Δinventory − capex + loan received − principal repaid = Δcash
 
 ### Save format
 
-- Key: `rlt-cafe-empire/save`. Envelope: `{ schemaVersion: 2, savedAt, game }`.
-- **Migration:** `migrateSave()` upgrades known older formats step by step. The v1 prototype format (money in ringgit decimals, no ledger) is migrated to v2 and covered by tests. Newer-than-supported versions are rejected.
+- Key: `rlt-cafe-empire/save`. Envelope: `{ schemaVersion: 3, savedAt, saveId, game }`.
+- **Migration:** `migrateSave()` upgrades known older formats step by step (v1 → v2 → v3). The v1 prototype format (money in ringgit decimals, no ledger) becomes v2; v2 saves gain the loan fields (no loan, zero debt, zero interest in past reports) to become v3. Both steps are covered by unit and e2e tests. Newer-than-supported versions are rejected.
 - **Validation:** `validateGameState()` checks types, integer money, ranges, known IDs, phase consistency and report structure.
 - **Write ids:** each write stores a random `saveId` before the game data, so `peekSaveId()` can detect another tab's write without parsing the whole save.
 - **Recovery:** if the save is malformed or invalid, the raw text is copied to `rlt-cafe-empire/save-rosak`, a new game starts and the player sees a notice. If `localStorage` is unavailable (for example in private mode), the game still runs in memory and shows a warning.
@@ -151,7 +157,7 @@ src/
 npm test
 ```
 
-There are 97 tests in 7 suites (`src/game/__tests__`):
+There are 113 tests in 8 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -160,6 +166,7 @@ There are 97 tests in 7 suites (`src/game/__tests__`):
 | `engine.test.ts` | starting state, purchases and insufficient funds, atomic batch buys, storage limits, price bounds, disabled products, revenue/COGS/net profit, cash balance, unsold stock is not COGS, spoilage, multi-seed 25-day reconciliation, capacity limits, price elasticity, one settlement per day, phase locking, promotions (including free promotions while cash is negative), staff (candidate list unchanged by hires and fires, unique names), upgrades, bankruptcy |
 | `events.test.ts` | reproducible rolls, hidden surprises, surprise effects starting at the event hour, effects of rain/festival/heatwave/power outage/breakdown/inspection (+mitigation)/contest/office order/reviewer/price spike |
 | `save.test.ts` | save/load round trips, export/import (round trip, file naming, invalid and oversized files, v1 import), save ids and other-tab write detection, malformed JSON, invalid values, future versions, throwing/unavailable storage, v1 migration, reset |
+| `loans.test.ts` | exact installment schedules, taking a loan (financing, level lock, one at a time, phase lock), installments at each close until repaid, charges when cash is short, fixed-cost forecast, free same-day cancellation, early settlement, borrowed cash excluded from savings objectives, v2→v3 migration, loan validation |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
 | `selectors.test.ts` | stock levels, restock plan, forecast never leaks surprises, price preview, hire capacity gain with upgrades, reputation display, chart series, compact labels |
 
@@ -178,6 +185,7 @@ npm run test:e2e
 | `persistence.spec.ts` | corrupt-save backup and recovery, v1 migration, confirmed reset, bankruptcy and confirmed restart |
 | `offline.spec.ts` | after the first visit, with the network cut for both the page and the service worker, the game reloads and keeps playing (charts included); other pages on the origin are not answered with the game; manifest and icons are served |
 | `backup.spec.ts` | export downloads the save; import restores it after a reset; an invalid file is rejected without changes; restoring and going bankrupt again on the same day shows the game-over dialog; keyboard focus stays inside the settings sheet |
+| `loans.spec.ts` | take a loan, installments in reconciled reports, early settlement and its objective; a v2 save migrates on load |
 | `multi-tab-and-dialogs.spec.ts` | second tab follows the first, stale-tab action and manual save never overwrite newer progress, toasts never cover dialog buttons or the sheet's close button, Escape closes only the top dialog |
 
 CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e suite on every push and pull request.
@@ -189,7 +197,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 ## Decisions on ambiguous requirements
 
 - **"Configurable unit cost":** unit cost lives in the product state and in `data/products.ts`. Players change it indirectly through the supplier-contract upgrade (−10%), bulk discounts and events (+25% coffee price spike). Prices are set directly.
-- **Six screens, five tabs:** Menu and Inventory share the *Menu* tab as sub-tabs. Staff, Upgrades and Objectives sit under *Urus*. Reports and the ledger sit under *Kewangan*. Settings opens from the header.
+- **Six screens, five tabs:** Menu and Inventory share the *Menu* tab as sub-tabs. Staff, Upgrades and Objectives sit under *Urus*. Reports, the ledger and loans sit under *Kewangan*. Settings opens from the header.
 - **Day flow:** `prep → (open) → closed → next day`. Editing is locked while closed so every transaction belongs to exactly one day's report.
 - **Marketing** is charged when the café opens. If cash is no longer sufficient, the promotion is cancelled and noted in the report.
 - **Objective rewards** are XP and levels, not cash, to keep the financial statements clean.
@@ -201,13 +209,13 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 ## Known limitations
 
 - Saves are local to one browser on one device, and there is no cloud sync. Use Settings → export/import to back up a game or move it to another device. Clearing site data without an exported file erases progress. Playing in two tabs is safe but not simultaneous: the most recent save wins and the other tab follows it.
-- Single café only. There is no multi-branch "empire" layer, ingredient-level recipes, staff morale, loans or depreciation.
+- Single café only. There is no multi-branch "empire" layer, ingredient-level recipes, staff morale or depreciation.
 - Report history keeps the latest 60 days. Lifetime totals are kept in stats.
 - Balance is tuned with a scripted bot over ~45 days and would benefit from playtesting.
 
 ## Recommended next steps
 
-1. Add a second-branch expansion, ingredient-level inventory (beans, milk, tea, pastry), loans and simple depreciation.
+1. Add a second-branch expansion, ingredient-level inventory (beans, milk, tea, pastry) and simple depreciation.
 2. Add a weekly summary report and goals for weekends and holidays.
 3. Support localisation (English) through a string table.
 

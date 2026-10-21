@@ -4,6 +4,7 @@
  */
 import { LOW_STOCK_RATIO, MAX_PURCHASE_QTY, MAX_STOCK_PER_PRODUCT } from './constants';
 import { EVENTS } from './data/events';
+import { LOAN_OFFER_ORDER, LOAN_OFFERS, type LoanOfferDef } from './data/loans';
 import { OBJECTIVES } from './data/objectives';
 import { PRODUCTS } from './data/products';
 import { PROMOTION_ORDER, PROMOTIONS, type PromotionDef } from './data/promotions';
@@ -11,10 +12,11 @@ import { UPGRADE_ORDER, UPGRADES, type UpgradeDef } from './data/upgrades';
 import { estimateDemand, modifiersForState, reputationPoints, salePrice, type DemandEstimate } from './demand';
 import { averageUnitCost, canAfford, inventoryValue, projectedFixedCosts, quotePurchase, todaysUnitCost } from './economy';
 import { isEventVisibleInPrep, resolveEvent } from './events';
+import { installment, installmentDue, offerTotalInterest, remainingPrincipal, settlementQuote, type Installment, type SettlementQuote } from './loans';
 import { formatRM, marginPercent } from './money';
 import { currentLevel, isObjectiveComplete } from './objectives';
 import { candidatesForState, hourlyCapacity, staffSlots } from './staff';
-import type { DayReport, GameState, ProductId, StaffCandidate } from './types';
+import type { ActiveLoan, DayReport, GameState, ProductId, StaffCandidate } from './types';
 import { PRODUCT_IDS } from './types';
 
 /** Demand estimate using only information the player can see (forecast events, not surprises). */
@@ -285,7 +287,10 @@ export function prepChecklist(state: GameState): PrepChecklistItem[] {
   items.push({
     id: 'costs',
     label: 'Kos tetap hari ini',
-    detail: `Gaji, sewa & utiliti asas: ${formatRM(fixed.totalSen)} dibayar semasa tutup.`,
+    detail:
+      fixed.loanSen > 0
+        ? `Gaji, sewa, utiliti asas & ansuran pinjaman: ${formatRM(fixed.totalSen)} dibayar semasa tutup.`
+        : `Gaji, sewa & utiliti asas: ${formatRM(fixed.totalSen)} dibayar semasa tutup.`,
     status: state.cashSen < fixed.totalSen ? 'warn' : 'ok',
   });
 
@@ -319,5 +324,60 @@ export function previewPrice(state: GameState, productId: ProductId, priceSen: n
     marginPct: marginPercent(sale, unitCostSen),
     perception: pricePerception(productId, sale),
     referencePriceSen: PRODUCTS[productId].referencePriceSen,
+  };
+}
+
+export interface LoanOfferView extends LoanOfferDef {
+  totalInterestSen: number;
+  totalRepaySen: number;
+  /** Typical daily installment (the last one may differ by a few sen). */
+  dailyInstallmentSen: number;
+  locked: boolean;
+}
+
+export function loanOfferViews(state: GameState): LoanOfferView[] {
+  const level = currentLevel(state);
+  return LOAN_OFFER_ORDER.map((id) => {
+    const def = LOAN_OFFERS[id];
+    const totalInterestSen = offerTotalInterest(id);
+    const first = installment({ principalSen: def.principalSen, totalInterestSen, termDays: def.termDays }, 1);
+    return {
+      ...def,
+      totalInterestSen,
+      totalRepaySen: def.principalSen + totalInterestSen,
+      dailyInstallmentSen: first.totalSen,
+      locked: level < def.minLevel,
+    };
+  });
+}
+
+export interface ActiveLoanView {
+  loan: ActiveLoan;
+  name: string;
+  remainingPrincipalSen: number;
+  remainingInterestSen: number;
+  paymentsLeft: number;
+  /** Installment charged at today's close, or null (e.g. on the day the loan was taken). */
+  dueToday: Installment | null;
+  /** The next installment to be charged, whichever day that is. */
+  nextInstallment: Installment;
+  settlement: SettlementQuote;
+  canSettle: boolean;
+}
+
+export function activeLoanView(state: GameState): ActiveLoanView | null {
+  const loan = state.loan;
+  if (!loan) return null;
+  const settlement = settlementQuote(loan, state.day);
+  return {
+    loan,
+    name: LOAN_OFFERS[loan.offerId].name,
+    remainingPrincipalSen: remainingPrincipal(loan),
+    remainingInterestSen: loan.totalInterestSen - loan.interestPaidSen,
+    paymentsLeft: loan.termDays - loan.paymentsMade,
+    dueToday: installmentDue(loan, state.day),
+    nextInstallment: installment(loan, loan.paymentsMade + 1),
+    settlement,
+    canSettle: settlement.totalSen <= state.cashSen,
   };
 }

@@ -12,7 +12,7 @@ test('export downloads the current save and import restores it after a reset', a
   expect(download.suggestedFilename()).toBe('cafe-empire-kopi-kita-hari-1.json');
   const path = await download.path();
   const exported = JSON.parse(await readFile(path, 'utf8'));
-  expect(exported.schemaVersion).toBe(2);
+  expect(exported.schemaVersion).toBe(3);
   expect(exported.game.history).toHaveLength(1);
   await expect(page.getByText(/dimuat turun/)).toBeVisible();
 

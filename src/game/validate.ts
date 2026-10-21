@@ -4,6 +4,7 @@
  */
 import { CAFE_NAME_MAX_LENGTH, MAX_PRICE_SEN, MAX_STOCK_PER_PRODUCT, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
 import { EVENTS } from './data/events';
+import { LOAN_OFFERS } from './data/loans';
 import { OBJECTIVES } from './data/objectives';
 import { PROMOTIONS } from './data/promotions';
 import { UPGRADES } from './data/upgrades';
@@ -23,6 +24,9 @@ const TX_TYPES = new Set([
   'event_income',
   'hiring',
   'upgrade',
+  'loan_proceeds',
+  'loan_interest',
+  'loan_principal',
 ]);
 const OBJECTIVE_IDS = new Set<string>(OBJECTIVES.map((o) => o.id));
 
@@ -108,11 +112,14 @@ function validateReport(v: Validator, value: unknown, path: string): void {
   ]) {
     v.int(r[key], `${path}.${key}`);
   }
+  for (const key of ['loanProceedsSen', 'loanPrincipalRepaidSen', 'openingDebtSen', 'closingDebtSen']) {
+    v.int(r[key], `${path}.${key}`, 0);
+  }
   v.num(r.reputationBefore, `${path}.reputationBefore`, 0, 100);
   v.num(r.reputationAfter, `${path}.reputationAfter`, 0, 100);
   const exp = v.obj(r.expenses, `${path}.expenses`);
   if (exp) {
-    for (const key of ['wagesSen', 'rentSen', 'utilitiesSen', 'marketingSen', 'otherSen', 'hiringSen', 'eventCostSen', 'spoilageSen']) {
+    for (const key of ['wagesSen', 'rentSen', 'utilitiesSen', 'marketingSen', 'otherSen', 'hiringSen', 'eventCostSen', 'spoilageSen', 'interestSen']) {
       v.int(exp[key], `${path}.expenses.${key}`, 0);
     }
   }
@@ -152,6 +159,21 @@ function validateReport(v: Validator, value: unknown, path: string): void {
   v.arr(r.objectivesCompleted, `${path}.objectivesCompleted`)?.forEach((o, i) =>
     v.oneOf(o, OBJECTIVE_IDS, `${path}.objectivesCompleted[${i}]`),
   );
+}
+
+function validateLoan(v: Validator, value: unknown, day: unknown): void {
+  const loan = v.obj(value, 'game.loan');
+  if (!loan) return;
+  v.oneOf(loan.offerId, Object.keys(LOAN_OFFERS), 'game.loan.offerId');
+  v.int(loan.principalSen, 'game.loan.principalSen', 1, 100_000_000);
+  v.int(loan.totalInterestSen, 'game.loan.totalInterestSen', 0, 100_000_000);
+  v.int(loan.termDays, 'game.loan.termDays', 1, 365);
+  v.int(loan.takenDay, 'game.loan.takenDay', 1, typeof day === 'number' ? day : 100_000);
+  // An active loan always has at least one installment and some principal left to pay.
+  const term = typeof loan.termDays === 'number' ? loan.termDays : 1;
+  v.int(loan.paymentsMade, 'game.loan.paymentsMade', 0, term - 1);
+  v.int(loan.principalRepaidSen, 'game.loan.principalRepaidSen', 0, typeof loan.principalSen === 'number' ? loan.principalSen - 1 : 0);
+  v.int(loan.interestPaidSen, 'game.loan.interestPaidSen', 0, typeof loan.totalInterestSen === 'number' ? loan.totalInterestSen : 0);
 }
 
 export type ValidationResult = { ok: true; state: GameState } | { ok: false; errors: string[] };
@@ -215,6 +237,7 @@ export function validateGameState(value: unknown): ValidationResult {
   if (dayStart) {
     v.int(dayStart.cashSen, 'game.dayStart.cashSen');
     v.int(dayStart.inventorySen, 'game.dayStart.inventorySen', 0);
+    v.int(dayStart.debtSen, 'game.dayStart.debtSen', 0);
     if (dayStart.staffNames !== undefined) {
       const names = v.arr(dayStart.staffNames, 'game.dayStart.staffNames');
       if (names) {
@@ -243,12 +266,14 @@ export function validateGameState(value: unknown): ValidationResult {
 
   const stats = v.obj(s.stats, 'game.stats');
   if (stats) {
-    for (const key of ['daysCompleted', 'totalServed', 'bestDayRevenueSen', 'profitableDays', 'profitStreak', 'perfectServiceDays', 'negativeCashStreak']) {
+    for (const key of ['daysCompleted', 'totalServed', 'bestDayRevenueSen', 'profitableDays', 'profitStreak', 'perfectServiceDays', 'negativeCashStreak', 'loansRepaid']) {
       v.int(stats[key], `game.stats.${key}`, 0);
     }
     v.int(stats.totalRevenueSen, 'game.stats.totalRevenueSen', 0);
     v.int(stats.totalNetProfitSen, 'game.stats.totalNetProfitSen');
   }
+
+  if (s.loan !== null) validateLoan(v, s.loan, s.day);
 
   if (v.errors.length > 0) return { ok: false, errors: v.errors };
   return { ok: true, state: value as GameState };

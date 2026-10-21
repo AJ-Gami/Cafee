@@ -3,7 +3,7 @@
  * numbers, not real Malaysian market data.
  */
 
-export const SAVE_SCHEMA_VERSION = 2;
+export const SAVE_SCHEMA_VERSION = 3;
 
 export const STARTING_CASH_SEN = 500_000; // RM5,000
 export const STARTING_REPUTATION = 50;
