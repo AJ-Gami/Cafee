@@ -20,19 +20,25 @@ export function GlobalNotices({ onOpenSettings }: { onOpenSettings: () => void }
       {bootNotice ? (
         <Notice
           tone={
-            bootNotice.kind === 'corrupt' || bootNotice.kind === 'synced' || bootNotice.kind === 'conflict'
+            bootNotice.kind === 'corrupt' || bootNotice.kind === 'synced' || bootNotice.kind === 'conflict' || bootNotice.kind === 'copy'
               ? 'warn'
               : bootNotice.kind === 'migrated'
                 ? 'info'
                 : 'good'
           }
           title={
-            bootNotice.kind === 'corrupt' ? 'Simpanan rosak dipulihkan' : bootNotice.kind === 'conflict' ? 'Tab versi lama dikesan' : undefined
+            bootNotice.kind === 'corrupt'
+              ? 'Simpanan rosak dipulihkan'
+              : bootNotice.kind === 'conflict'
+                ? 'Tab versi lama dikesan'
+                : bootNotice.kind === 'copy'
+                  ? 'Salinan sandaran ditemui'
+                  : undefined
           }
           onDismiss={dismissBootNotice}
           role="status"
           action={
-            bootNotice.kind === 'corrupt' ? (
+            bootNotice.kind === 'corrupt' || bootNotice.kind === 'copy' ? (
               <button type="button" onClick={onOpenSettings} className="min-h-11 font-semibold underline underline-offset-2">
                 Tetapan simpanan
               </button>

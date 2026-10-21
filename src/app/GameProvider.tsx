@@ -3,16 +3,19 @@ import { createNewGame } from '../game/engine';
 import { gameReducer, initStore, type GameAction, type GameStore } from '../game/reducer';
 import { newRandomSeed } from '../game/rng';
 import {
+  BACKUP_KEY,
   clearSave,
   compareProgress,
+  discardCopy as discardStoredCopy,
   getBrowserStorage,
   isEarlierStateOf,
+  keepCopy,
   loadGame,
   peekSaveId,
-  readBackup,
+  readCopies,
+  readLegacyBackup,
   SAVE_KEY,
   saveGame,
-  writeBackup,
   type DecodedSave,
   type StorageLike,
 } from '../game/save';
@@ -26,7 +29,9 @@ export type BootNotice =
   | { kind: 'restored'; message: string }
   | { kind: 'synced'; message: string }
   /** A tab running an older build of the game wrote older progress; this tab kept its own. */
-  | { kind: 'conflict'; message: string };
+  | { kind: 'conflict'; message: string }
+  /** A kept copy is further ahead than the game that was loaded (see Settings to restore it). */
+  | { kind: 'copy'; message: string };
 
 export interface SaveInfo {
   status: 'pending' | 'saved' | 'error' | 'unavailable';
@@ -48,8 +53,10 @@ interface GameContextValue {
   resetGame: () => void;
   /** Replace the current game with an imported or restored save (already validated). */
   importGame: (game: GameState, message?: string) => void;
-  /** The save in the backup key, if this build can load it. */
-  readBackupSave: () => DecodedSave | null;
+  /** Copies set aside that this build can load (see save.readCopies). */
+  readCopies: () => DecodedSave[];
+  /** Forget a set-aside copy. */
+  discardCopy: (game: GameState) => void;
   /**
    * The stored save belongs to a newer version of the game. This tab is read-only (no autosave,
    * no actions) so it can never overwrite that save; the player is asked to reload.
@@ -89,6 +96,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
   gameRef.current = store.game;
 
   /**
+   * An older build moves a save it cannot read into BACKUP_KEY, and overwrites that key each time
+   * it meets one, so a restorable save there may soon be lost. Keep it in this build's own copies
+   * unless it is just an earlier point of the current game.
+   */
+  const rescueLegacyBackup = useCallback(
+    (current: GameState): GameState | null => {
+      const legacy = readLegacyBackup(storage);
+      if (!legacy || isEarlierStateOf(legacy.game, current)) return null;
+      keepCopy(storage, legacy.game);
+      return legacy.game;
+    },
+    [storage],
+  );
+
+  /**
    * Load the save written by another tab and make it this tab's state.
    * `blocked` means the player's action was dropped because of it, so tell them right there.
    */
@@ -107,7 +129,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const ours = gameRef.current;
       const theirs = result.game;
       if (compareProgress(theirs, ours) < 0) {
-        const setAside = !isEarlierStateOf(theirs, ours) && writeBackup(storage, theirs);
+        const setAside = !isEarlierStateOf(theirs, ours) && keepCopy(storage, theirs);
         const saved = saveGame(storage, ours);
         if (saved.ok) {
           lastSaveIdRef.current = saved.saveId;
@@ -121,7 +143,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         });
         return false;
       }
-      if (!isEarlierStateOf(ours, theirs)) writeBackup(storage, ours);
+      if (!isEarlierStateOf(ours, theirs)) keepCopy(storage, ours);
     }
     // Not written back, so the old build (if any) can still read what it saved.
     skipSaveRef.current = result.game;
@@ -152,6 +174,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const result = loadGame(storage);
+    const rescued =
+      result.status !== 'newer' && result.status !== 'unavailable'
+        ? rescueLegacyBackup(result.status === 'loaded' ? result.game : gameRef.current)
+        : null;
     if (result.status === 'loaded') {
       skipSaveRef.current = result.game;
       lastWrittenRef.current = result.game;
@@ -170,6 +196,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }
     } else if (result.status === 'newer') {
       setOutdated(true);
+    }
+    // e.g. an older build could not read the newer save and started over: point the player to it.
+    if (rescued && result.status === 'loaded' && compareProgress(rescued, result.game) > 0) {
+      setBootNotice({
+        kind: 'copy',
+        message: `Salinan kemajuan yang lebih jauh ditemui (${rescued.cafeName}, Hari ${rescued.day}). Anda boleh memulihkannya dalam Tetapan.`,
+      });
     } else if (result.status === 'corrupt') {
       setBootNotice({
         kind: 'corrupt',
@@ -177,7 +210,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       });
     }
     setBoot('ready');
-  }, [storage]);
+  }, [storage, rescueLegacyBackup]);
 
   // Autosave after every state change once the save has been read.
   useEffect(() => {
@@ -211,6 +244,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!storage || boot !== 'ready' || outdated) return;
     const onStorage = (e: StorageEvent) => {
+      if (e.key === BACKUP_KEY && e.newValue !== null) rescueLegacyBackup(gameRef.current);
       if (e.key !== SAVE_KEY || e.newValue === null) return;
       if (storageIsNewer()) adoptStoredSave('remote');
     };
@@ -225,7 +259,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('pageshow', onShow);
       document.removeEventListener('visibilitychange', onShow);
     };
-  }, [storage, boot, outdated, adoptStoredSave, storageIsNewer]);
+  }, [storage, boot, outdated, adoptStoredSave, storageIsNewer, rescueLegacyBackup]);
 
   /**
    * Before any action that changes the game, make sure this tab still holds the latest save.
@@ -280,7 +314,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setBootNotice(null);
   }, [outdated, storage]);
 
-  const readBackupSave = useCallback(() => readBackup(storage), [storage]);
+  const readCopiesCb = useCallback(() => readCopies(storage), [storage]);
+  const discardCopy = useCallback((game: GameState) => discardStoredCopy(storage, game), [storage]);
 
   const value = useMemo<GameContextValue>(
     () => ({
@@ -295,10 +330,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       saveNow,
       resetGame,
       importGame,
-      readBackupSave,
+      readCopies: readCopiesCb,
+      discardCopy,
       outdated,
     }),
-    [boot, store, dispatch, saveInfo, storage, bootNotice, saveNow, resetGame, importGame, readBackupSave, outdated],
+    [boot, store, dispatch, saveInfo, storage, bootNotice, saveNow, resetGame, importGame, readCopiesCb, discardCopy, outdated],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

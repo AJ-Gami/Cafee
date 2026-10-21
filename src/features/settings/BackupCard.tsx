@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpFromLine, FolderSync, History } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, FolderSync, History, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useGame } from '../../app/GameProvider';
 import { Button } from '../../components/Button';
@@ -12,16 +12,19 @@ type Status = { kind: 'idle' } | { kind: 'reading' } | { kind: 'exported'; fileN
 
 /** Export the save to a file, or import one, to back up or move a game between browsers and devices. */
 export function BackupCard() {
-  const { game, importGame, readBackupSave } = useGame();
+  const { game, importGame, readCopies, discardCopy } = useGame();
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [pending, setPending] = useState<{ game: GameState; migratedFrom: number | null; source: 'file' | 'backup' } | null>(null);
-  // Offer the backup only when it holds play the current game does not: restoring an earlier
-  // point of this same game would just roll it back.
-  const backup = useMemo(() => {
-    const saved = readBackupSave();
-    return saved && !isEarlierStateOf(saved.game, game) ? saved : null;
-  }, [readBackupSave, game]);
+  const [copiesVersion, setCopiesVersion] = useState(0);
+  const [discardTarget, setDiscardTarget] = useState<GameState | null>(null);
+  // Offer only copies holding play the current game does not: restoring an earlier point of this
+  // same game would just roll it back.
+  const copies = useMemo(
+    () => readCopies().filter((c) => !isEarlierStateOf(c.game, game)),
+    // copiesVersion changes after a copy is discarded, to read the list again.
+    [readCopies, game, copiesVersion],
+  );
 
   const onExport = () => {
     try {
@@ -102,26 +105,68 @@ export function BackupCard() {
       </p>
       <p className="text-xs text-espresso-600">Fail hanya mengandungi data permainan ini dan kekal pada peranti anda kecuali anda berkongsinya.</p>
 
-      {backup ? (
-        <div className="mt-3 rounded-xl bg-cream-100 p-3">
-          <p className="text-sm font-semibold text-espresso-800">Salinan sandaran dalam pelayar ini</p>
-          <p className="mt-0.5 text-sm text-espresso-700">
-            {backup.game.cafeName}, Hari {backup.game.day} · tunai <Money sen={backup.game.cashSen} />
-          </p>
-          <p className="mt-1 text-xs text-espresso-600">
+      {copies.length > 0 ? (
+        <section className="mt-3 rounded-xl bg-cream-100 p-3" aria-labelledby="salinan-title">
+          <h3 id="salinan-title" className="text-sm font-semibold text-espresso-800">
+            Salinan sandaran dalam pelayar ini
+          </h3>
+          <p className="mt-0.5 text-xs text-espresso-600">
             Disimpan secara automatik apabila simpanan tidak dapat dibaca, atau apabila tab versi lama menyimpan kemajuan yang berbeza.
           </p>
-          <Button
-            className="mt-2"
-            block
-            variant="secondary"
-            icon={<History className="size-4" aria-hidden="true" />}
-            onClick={() => setPending({ game: backup.game, migratedFrom: backup.migratedFrom, source: 'backup' })}
-          >
-            Pulihkan salinan sandaran
-          </Button>
-        </div>
+          <ul className="mt-2 space-y-3">
+            {copies.map((c) => {
+              const label = `${c.game.cafeName}, Hari ${c.game.day}`;
+              return (
+                <li key={JSON.stringify([c.game.seed, c.game.day, c.game.txSeq, c.game.cashSen])}>
+                  <p className="text-sm text-espresso-700">
+                    {label} · tunai <Money sen={c.game.cashSen} />
+                  </p>
+                  <div className="mt-1.5 grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon={<History className="size-4" aria-hidden="true" />}
+                      aria-label={`Pulihkan salinan sandaran: ${label}`}
+                      onClick={() => setPending({ game: c.game, migratedFrom: c.migratedFrom, source: 'backup' })}
+                    >
+                      Pulihkan
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<Trash2 className="size-4" aria-hidden="true" />}
+                      aria-label={`Buang salinan sandaran: ${label}`}
+                      onClick={() => setDiscardTarget(c.game)}
+                    >
+                      Buang
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       ) : null}
+
+      <ConfirmDialog
+        open={discardTarget !== null}
+        title="Buang salinan sandaran ini?"
+        confirmLabel="Buang salinan"
+        tone="danger"
+        onCancel={() => setDiscardTarget(null)}
+        onConfirm={() => {
+          if (discardTarget) discardCopy(discardTarget);
+          setDiscardTarget(null);
+          setCopiesVersion((v) => v + 1);
+        }}
+      >
+        {discardTarget ? (
+          <p>
+            Salinan {discardTarget.cafeName}, Hari {discardTarget.day} akan dipadam daripada pelayar ini. Permainan semasa tidak berubah. Tindakan ini
+            tidak boleh dibatalkan.
+          </p>
+        ) : null}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={pending !== null}

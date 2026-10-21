@@ -2,6 +2,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 
 export const SAVE_KEY = 'rlt-cafe-empire/save';
 export const BACKUP_KEY = 'rlt-cafe-empire/save-rosak';
+export const COPIES_KEY = 'rlt-cafe-empire/salinan';
 
 /** Minimal shape of the stored save used by assertions. */
 export interface StoredSave {
@@ -15,6 +16,7 @@ export interface StoredSave {
     cashSen: number;
     reputation: number;
     cafeName: string;
+    seed: number;
     history: { day: number; netProfitSen: number }[];
     staff: { id: string; name: string }[];
     dayStart: { cashSen: number; inventorySen: number; debtSen: number; staffNames?: string[] };

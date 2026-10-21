@@ -14,10 +14,14 @@ import {
   migrateSave,
   parseImportedSave,
   peekSaveId,
-  readBackup,
+  readCopies,
+  readLegacyBackup,
   SAVE_KEY,
   saveGame,
-  writeBackup,
+  keepCopy,
+  discardCopy,
+  COPIES_KEY,
+  MAX_KEPT_COPIES,
   type StorageLike,
 } from '../save';
 import { validateGameState } from '../validate';
@@ -153,16 +157,47 @@ describe('invalid save recovery', () => {
     expect(loadGame(createMemoryStorage({ [SAVE_KEY]: '{"foo":1}' })).status).toBe('corrupt');
   });
 
-  it('offers the backup copy only when this build can load it', () => {
-    const played = playDays(newGame(), 2).state;
-    expect(readBackup(createMemoryStorage())).toBeNull();
-    expect(readBackup(createMemoryStorage({ [BACKUP_KEY]: '{broken' }))).toBeNull();
+  it('keeps restorable copies in their own key, newest first, without duplicates', () => {
+    const a = playDays(newGame(), 1).state;
+    const b = playDays(newGame(77), 2).state;
+    const c = playDays(newGame(78), 1).state;
+    const d = playDays(newGame(79), 1).state;
+    expect(readCopies(createMemoryStorage())).toEqual([]);
+    expect(readCopies(createMemoryStorage({ [BACKUP_KEY]: '{broken', [COPIES_KEY]: 'nope' }))).toEqual([]);
+
     const storage = createMemoryStorage();
-    expect(writeBackup(storage, played, new Date('2026-03-01T00:00:00Z'))).toBe(true);
-    expect(readBackup(storage)).toMatchObject({ game: played, savedAt: '2026-03-01T00:00:00.000Z', migratedFrom: null });
-    // What an older build leaves behind when it cannot read a current save: the raw text.
-    const moved = createMemoryStorage({ [BACKUP_KEY]: exportSave(played) });
-    expect(readBackup(moved)?.game).toEqual(played);
+    expect(keepCopy(storage, a, new Date('2026-03-01T00:00:00Z'))).toBe(true);
+    keepCopy(storage, b);
+    keepCopy(storage, a); // the same game again moves to the front instead of duplicating
+    expect(readCopies(storage).map((x) => x.game)).toEqual([a, b]);
+    keepCopy(storage, c);
+    keepCopy(storage, d);
+    expect(readCopies(storage).map((x) => x.game)).toEqual([d, c, a]);
+    expect(MAX_KEPT_COPIES).toBe(3);
+
+    // What an older build leaves in BACKUP_KEY when it cannot read a current save is listed last.
+    storage.setItem(BACKUP_KEY, exportSave(b));
+    expect(readCopies(storage).map((x) => x.game)).toEqual([d, c, a, b]);
+    storage.setItem(BACKUP_KEY, exportSave(c));
+    expect(readCopies(storage).map((x) => x.game)).toEqual([d, c, a]);
+    expect(readLegacyBackup(storage)?.game).toEqual(c);
+
+    discardCopy(storage, c);
+    expect(readCopies(storage).map((x) => x.game)).toEqual([d, a]);
+    expect(storage.getItem(BACKUP_KEY)).toBeNull();
+  });
+
+  it('copes with storage that refuses writes when keeping a copy', () => {
+    const full: StorageLike = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+      removeItem: () => undefined,
+    };
+    expect(keepCopy(full, newGame())).toBe(false);
+    expect(keepCopy(null, newGame())).toBe(false);
+    expect(() => discardCopy(full, newGame())).not.toThrow();
   });
 
   it('handles unavailable or throwing storage gracefully', () => {

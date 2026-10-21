@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { BACKUP_KEY, gotoApp, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, toast, writeSaveAsOtherTab, type StoredSave } from './helpers';
+import { BACKUP_KEY, COPIES_KEY, gotoApp, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, toast, writeSaveAsOtherTab, type StoredSave } from './helpers';
 
 /** Rewrite the stored save as a different schema version, as another build of the game would. */
 async function writeAsVersion(page: Page, version: number, mutate: (game: Record<string, unknown>) => void): Promise<void> {
@@ -55,7 +55,9 @@ async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: str
   );
 }
 
-const storedBackup = (page: Page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), BACKUP_KEY);
+/** The copies set aside by the current build (newest first). */
+const keptCopies = (page: Page) =>
+  page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '[]') as { game: StoredSave['game'] }[], COPIES_KEY);
 
 test('an older-build tab that is behind cannot replace newer progress; a diverging copy is kept aside', async ({ context }) => {
   const a = await context.newPage();
@@ -75,7 +77,7 @@ test('an older-build tab that is behind cannot replace newer progress; a divergi
   await expect(a.getByText(/kemajuan yang kurang \(Hari 1\)\. Kemajuan anda \(Hari 2\) dikekalkan\. Muat semula/)).toBeVisible();
   expect((await readSave(a))?.game.day).toBe(2);
   expect((await readSave(a))?.schemaVersion).toBe(3);
-  expect(await storedBackup(a)).toBeNull();
+  expect(await keptCopies(a)).toEqual([]);
 
   // Day 1 played differently in the old tab (it bought more stock): kept aside and restorable.
   const branch = structuredClone(day1) as unknown as { cashSen: number; dayTransactions: unknown[] };
@@ -84,9 +86,9 @@ test('an older-build tab that is behind cannot replace newer progress; a divergi
   await writeAsOldBuild(old, branch as unknown as StoredSave['game'], 'old-2');
   await expect(a.getByText(/salinan tab itu boleh dipulihkan dalam Tetapan/)).toBeVisible();
   expect((await readSave(a))?.game.cashSen).toBe(ours.game.cashSen);
-  expect((await storedBackup(a))?.game.cashSen).toBe(day1.cashSen - 500);
+  expect((await keptCopies(a))[0]?.game.cashSen).toBe(day1.cashSen - 500);
   await a.getByRole('button', { name: 'Tetapan & simpanan' }).click();
-  await expect(a.getByRole('button', { name: 'Pulihkan salinan sandaran' })).toBeVisible();
+  await expect(a.getByRole('button', { name: 'Pulihkan salinan sandaran: Kopi Kita, Hari 1' })).toBeVisible();
 });
 
 test('progress made further ahead in an older-build tab is adopted, not reverted', async ({ context }) => {
@@ -112,7 +114,7 @@ test('progress made further ahead in an older-build tab is adopted, not reverted
   const stored = await readSave(a);
   expect(stored?.schemaVersion).toBe(2);
   expect(stored?.game.day).toBe(2);
-  expect(await storedBackup(a)).toBeNull();
+  expect(await keptCopies(a)).toEqual([]);
 });
 
 test('a loadable backup copy can be restored from settings', async ({ page }) => {
@@ -131,7 +133,7 @@ test('a loadable backup copy can be restored from settings', async ({ page }) =>
   await expect(page.locator('header')).toContainText('RM5,000.00');
   await page.getByRole('button', { name: 'Tetapan & simpanan' }).click();
   await expect(page.getByText('Kopi Sandaran, Hari 1')).toBeVisible();
-  await page.getByRole('button', { name: 'Pulihkan salinan sandaran' }).click();
+  await page.getByRole('button', { name: 'Pulihkan salinan sandaran: Kopi Sandaran, Hari 1' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Pulihkan & gantikan' }).click();
   await expect(toast(page)).toContainText('Salinan sandaran dipulihkan');
   await expect(page.locator('header')).toContainText('RM6,543.00');
@@ -141,4 +143,25 @@ test('a loadable backup copy can be restored from settings', async ({ page }) =>
   await page.keyboard.press('Tab');
   expect(await page.evaluate(() => !!document.activeElement?.closest('[role=dialog]'))).toBe(true);
   expect((await readSave(page))?.game.cafeName).toBe('Kopi Sandaran');
+});
+
+test('a kept copy can be removed from settings', async ({ page }) => {
+  await gotoApp(page);
+  await writeSaveAsOtherTab(page, (g) => {
+    g.cafeName = 'Kopi Lama';
+    g.seed = 4242;
+  });
+  // Set that game aside as a kept copy, then start over.
+  await page.evaluate(([key, copiesKey]) => {
+    localStorage.setItem(copiesKey, JSON.stringify([JSON.parse(localStorage.getItem(key) ?? '{}')]));
+    localStorage.removeItem(key);
+  }, [SAVE_KEY, COPIES_KEY] as const);
+  await page.reload();
+  await page.getByRole('button', { name: 'Tetapan & simpanan' }).click();
+  await page.getByRole('button', { name: 'Buang salinan sandaran: Kopi Lama, Hari 1' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Buang salinan' }).click();
+  await expect(page.getByText('Salinan sandaran dalam pelayar ini')).toHaveCount(0);
+  expect(await page.evaluate((key) => localStorage.getItem(key), COPIES_KEY)).toBe('[]');
+  // Focus stays in the settings sheet after its control disappears.
+  expect(await page.evaluate(() => !!document.activeElement?.closest('[role=dialog]'))).toBe(true);
 });

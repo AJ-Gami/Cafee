@@ -314,33 +314,91 @@ export function isEarlierStateOf(earlier: GameState, later: GameState): boolean 
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Copies kept aside for restoring
+// ---------------------------------------------------------------------------
+
 /**
- * The copy in the backup key, if it is a save this build can load. The backup holds a save moved
- * aside as unreadable — possibly by an older build that could not read a newer save — or the copy
- * set aside when a tab running an older build and this build held different progress.
+ * Up to MAX_KEPT_COPIES saves set aside by this build, newest first. Older builds do not know this
+ * key, so unlike BACKUP_KEY (which an older build overwrites whenever it meets a save it cannot
+ * read) nothing but this build changes it.
  */
-export function readBackup(storage: StorageLike | null): DecodedSave | null {
-  if (!storage) return null;
-  let text: string | null;
+export const COPIES_KEY = 'rlt-cafe-empire/salinan';
+export const MAX_KEPT_COPIES = 3;
+
+function readCopyList(storage: StorageLike): unknown[] {
   try {
-    text = storage.getItem(BACKUP_KEY);
+    const parsed: unknown = JSON.parse(storage.getItem(COPIES_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return null;
+    return [];
   }
-  if (text === null) return null;
-  const decoded = decodeSave(text);
-  return decoded.ok ? decoded.save : null;
 }
 
-/** Keep a safety copy of `game` in the backup key. */
-export function writeBackup(storage: StorageLike | null, game: GameState, now: Date = new Date()): boolean {
+/** Keep `game` as a restorable copy (an identical copy is replaced, the oldest beyond the limit dropped). */
+export function keepCopy(storage: StorageLike | null, game: GameState, now: Date = new Date()): boolean {
   if (!storage) return false;
   try {
-    storage.setItem(BACKUP_KEY, exportSave(game, now));
+    const text = JSON.stringify(game);
+    const others = readCopyList(storage).filter((e) => !(isObj(e) && JSON.stringify(e.game) === text));
+    const envelope: SaveEnvelope = { schemaVersion: SAVE_SCHEMA_VERSION, savedAt: now.toISOString(), game };
+    storage.setItem(COPIES_KEY, JSON.stringify([envelope, ...others].slice(0, MAX_KEPT_COPIES)));
     return true;
   } catch {
     return false;
   }
+}
+
+/** Forget a kept copy, wherever it is stored. */
+export function discardCopy(storage: StorageLike | null, game: GameState): void {
+  if (!storage) return;
+  const text = JSON.stringify(game);
+  try {
+    storage.setItem(COPIES_KEY, JSON.stringify(readCopyList(storage).filter((e) => !(isObj(e) && JSON.stringify(e.game) === text))));
+    const legacy = storage.getItem(BACKUP_KEY);
+    if (legacy !== null) {
+      const decoded = decodeSave(legacy);
+      if (decoded.ok && JSON.stringify(decoded.save.game) === text) storage.removeItem(BACKUP_KEY);
+    }
+  } catch {
+    // Nothing else to do: the copy simply stays.
+  }
+}
+
+/** The save in BACKUP_KEY, if this build can load it. */
+export function readLegacyBackup(storage: StorageLike | null): DecodedSave | null {
+  if (!storage) return null;
+  try {
+    const text = storage.getItem(BACKUP_KEY);
+    if (text === null) return null;
+    const decoded = decodeSave(text);
+    return decoded.ok ? decoded.save : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every copy this build can load, newest kept copy first: the kept copies, then BACKUP_KEY (a save
+ * moved aside as unreadable — possibly a newer save that an older build could not read).
+ */
+export function readCopies(storage: StorageLike | null): DecodedSave[] {
+  if (!storage) return [];
+  const seen = new Set<string>();
+  const out: DecodedSave[] = [];
+  const add = (save: DecodedSave | null) => {
+    if (!save) return;
+    const key = JSON.stringify(save.game);
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(save);
+  };
+  for (const item of readCopyList(storage)) {
+    const decoded = decodeSave(JSON.stringify(item));
+    add(decoded.ok ? decoded.save : null);
+  }
+  add(readLegacyBackup(storage));
+  return out;
 }
 
 export interface DecodedSave {
