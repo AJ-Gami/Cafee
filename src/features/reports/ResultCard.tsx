@@ -4,7 +4,7 @@ import { Button } from '../../components/Button';
 import { CafeScene } from '../../components/CafeScene';
 import { Money } from '../../components/Money';
 import { EVENTS } from '../../game/data/events';
-import { reputationPoints, weekdayName } from '../../game/demand';
+import { percentPoints, reputationPoints, weekdayName } from '../../game/demand';
 import { formatRM } from '../../game/money';
 import { shareText } from '../../game/reports';
 import type { DayReport } from '../../game/types';
@@ -93,7 +93,7 @@ export function ResultCard({ report }: { report: DayReport }) {
             <dt className="flex items-center gap-1 text-[11px] font-semibold uppercase text-espresso-600">
               <Gauge className="size-3" aria-hidden="true" /> Kadar servis
             </dt>
-            <dd className="mt-0.5 text-lg font-semibold">{Math.round(report.customers.serviceRate * 100)}%</dd>
+            <dd className="mt-0.5 text-lg font-semibold">{percentPoints(report.customers.serviceRate)}%</dd>
           </div>
           <div className="rounded-xl bg-cream-100 p-2.5">
             <dt className="flex items-center gap-1 text-[11px] font-semibold uppercase text-espresso-600">

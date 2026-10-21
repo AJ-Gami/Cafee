@@ -6,19 +6,24 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select
 
 /** Open modals, innermost last. Only the top-most one reacts to Escape and traps Tab. */
 const modalStack: symbol[] = [];
+/** Increases every time any modal opens, even when another closes in the same update. */
+let modalOpenSeq = 0;
 const stackListeners = new Set<() => void>();
 const notifyStack = () => stackListeners.forEach((l) => l());
 
+function subscribeStack(listener: () => void): () => void {
+  stackListeners.add(listener);
+  return () => stackListeners.delete(listener);
+}
+
 /** Number of dialogs and sheets currently open (0 when none). */
 export function useOpenModalCount(): number {
-  return useSyncExternalStore(
-    (listener) => {
-      stackListeners.add(listener);
-      return () => stackListeners.delete(listener);
-    },
-    () => modalStack.length,
-    () => 0,
-  );
+  return useSyncExternalStore(subscribeStack, () => modalStack.length, () => 0);
+}
+
+/** A counter that changes whenever a dialog or sheet opens. */
+export function useModalOpenSeq(): number {
+  return useSyncExternalStore(subscribeStack, () => modalOpenSeq, () => 0);
 }
 
 function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.RefObject<HTMLDivElement | null>) {
@@ -30,6 +35,7 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const token = Symbol('modal');
     modalStack.push(token);
+    modalOpenSeq += 1;
     notifyStack();
     document.body.style.overflow = 'hidden';
     const panel = panelRef.current;

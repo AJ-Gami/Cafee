@@ -19,7 +19,7 @@ import { PRODUCTS } from './data/products';
 import { PROMOTIONS } from './data/promotions';
 import { STAFF_ROLES, STARTING_STAFF } from './data/staff';
 import { UPGRADES } from './data/upgrades';
-import { buildModifiers, capacityForHour, formatHour, reputationChange, simulateDay, weekdayName } from './demand';
+import { buildModifiers, capacityForHour, formatHour, percentPoints, reputationChange, simulateDay, weekdayName } from './demand';
 import {
   addToStock,
   canAfford,
@@ -368,8 +368,8 @@ function describeEvent(
   if (effects.reviewer) {
     parts.push(
       reviewerDelta >= 0
-        ? `Pengulas berpuas hati dengan servis anda (${Math.round(customers.serviceRate * 100)}% pelanggan dilayan).`
-        : `Pengulas kecewa — hanya ${Math.round(customers.serviceRate * 100)}% pelanggan dilayan.`,
+        ? `Pengulas berpuas hati dengan servis anda (${percentPoints(customers.serviceRate)}% pelanggan dilayan).`
+        : `Pengulas kecewa — hanya ${percentPoints(customers.serviceRate)}% pelanggan dilayan.`,
     );
   }
   if (extraOrder) {

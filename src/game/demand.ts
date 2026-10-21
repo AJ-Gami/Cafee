@@ -451,6 +451,14 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
 // Reputation
 // ---------------------------------------------------------------------------
 
+/**
+ * Whole percent for display (0.896 -> 89). Rounds down, with a tiny epsilon so floating-point
+ * results such as 0.29 * 100 = 28.999… still read 29, so a threshold is never shown as met early.
+ */
+export function percentPoints(ratio: number): number {
+  return Math.floor(ratio * 100 + 1e-9);
+}
+
 /** Whole reputation points for display. Rounds down so it never shows a milestone not yet reached. */
 export function reputationPoints(reputation: number): number {
   return Math.floor(reputation + 1e-9);

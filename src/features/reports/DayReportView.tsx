@@ -8,7 +8,7 @@ import { ProgressBar } from '../../components/ProgressBar';
 import { EVENTS } from '../../game/data/events';
 import { PRODUCTS } from '../../game/data/products';
 import { PROMOTIONS } from '../../game/data/promotions';
-import { formatHour } from '../../game/demand';
+import { formatHour, percentPoints } from '../../game/demand';
 import { objectiveDef } from '../../game/objectives';
 import { cashFlowSummary, reconcileReport } from '../../game/reports';
 import type { DayReport, TimelineTone, TransactionType } from '../../game/types';
@@ -127,7 +127,7 @@ export function DayReportView({ report }: { report: DayReport }) {
         <CardTitle title="Pelanggan" subtitle={`${c.arrivals} orang datang ke kafe`} icon={<Users className="size-5" />} />
         <div className="flex items-baseline justify-between">
           <p className="text-sm text-espresso-700">Kadar servis</p>
-          <p className="font-semibold">{Math.round(c.serviceRate * 100)}%</p>
+          <p className="font-semibold">{percentPoints(c.serviceRate)}%</p>
         </div>
         <ProgressBar value={c.serviceRate} label="Kadar servis" tone={c.serviceRate >= 0.85 ? 'sage' : c.serviceRate >= 0.7 ? 'honey' : 'rust'} className="mt-1" />
         <dl className="mt-3 divide-y divide-espresso-800/[0.07]">

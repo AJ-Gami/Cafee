@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { setPromotion } from '../engine';
 import { formatRMCompact } from '../money';
 import { cumulativeByHour, historySeries } from '../reports';
-import { reputationPoints } from '../demand';
+import { percentPoints, reputationPoints } from '../demand';
 import {
   capacityAfterHire,
   dayEstimate,
@@ -83,6 +83,12 @@ describe('selectors', () => {
     expect(near?.current).toBe(69);
     expect(near?.complete).toBe(false);
     expect(reputationPoints(69.6)).toBe(69);
+    // Percentages round down but are immune to float error (0.29 * 100 = 28.999…).
+    expect(percentPoints(0.29)).toBe(29);
+    expect(percentPoints(0.58)).toBe(58);
+    expect(percentPoints(0.896)).toBe(89);
+    expect(percentPoints(1)).toBe(100);
+    expect(percentPoints(0)).toBe(0);
     expect(reputationPoints(70)).toBe(70);
     expect(reputationPoints(50)).toBe(50);
   });

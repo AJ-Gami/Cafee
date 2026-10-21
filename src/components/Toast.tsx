@@ -2,22 +2,22 @@ import { CircleAlert, CircleCheck, Info, Target } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useGame } from '../app/GameProvider';
 import { objectiveDef } from '../game/objectives';
-import { useOpenModalCount } from './Modal';
+import { useModalOpenSeq, useOpenModalCount } from './Modal';
 
 /** Transient feedback for player actions (purchase succeeded/failed, objectives reached). */
 export function Toast() {
   const { store, dispatch } = useGame();
   const feedback = store.feedback;
-  const modalCount = useOpenModalCount();
-  const modalOpen = modalCount > 0;
-  const prevModalCount = useRef(modalCount);
+  const modalOpen = useOpenModalCount() > 0;
+  const openSeq = useModalOpenSeq();
+  const prevOpenSeq = useRef(openSeq);
 
   // A newly opened dialog or sheet takes over: clear any toast so it can never hide the
   // dialog's buttons. The toast itself always captures its own taps (tap = dismiss only).
   useEffect(() => {
-    if (modalCount > prevModalCount.current && feedback) dispatch({ type: 'DISMISS_FEEDBACK', id: feedback.id });
-    prevModalCount.current = modalCount;
-  }, [modalCount, feedback, dispatch]);
+    if (openSeq !== prevOpenSeq.current && feedback) dispatch({ type: 'DISMISS_FEEDBACK', id: feedback.id });
+    prevOpenSeq.current = openSeq;
+  }, [openSeq, feedback, dispatch]);
 
   useEffect(() => {
     if (!feedback) return;

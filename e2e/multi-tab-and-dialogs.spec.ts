@@ -63,9 +63,30 @@ test.describe('dialogs and toasts', () => {
     await page.getByRole('alertdialog').getByRole('button', { name: 'Ambil bekerja' }).click();
     await expect(toast(page)).toBeVisible();
     await page.getByRole('button', { name: /^Berhentikan / }).first().click();
-    await expect(toast(page)).toHaveCount(0);
+    // Short timeout: the toast must be cleared by the dialog opening, not by its own 3–5 s expiry.
+    await expect(toast(page)).toHaveCount(0, { timeout: 500 });
     expect(await buttonIsReachable(page, 'Berhentikan')).toBe(true);
     expect(await buttonIsReachable(page, 'Batal')).toBe(true);
+  });
+
+  test('switching from the game-over dialog to its confirmation clears a toast', async ({ context }) => {
+    const a = await context.newPage();
+    await gotoApp(a);
+    await writeSaveAsOtherTab(a, (g) => {
+      g.status = 'bankrupt';
+    });
+    await a.reload();
+    await expect(a.getByRole('alertdialog', { name: 'Kafe anda muflis' })).toBeVisible();
+    // Another tab saves while the dialog is open: this tab shows an info toast.
+    const b = await context.newPage();
+    await gotoApp(b);
+    await writeSaveAsOtherTab(b, (g) => {
+      g.cafeName = 'Kopi Dua';
+    }, 'tab-b');
+    await expect(toast(a)).toContainText('dikemas kini daripada tab lain');
+    await a.getByRole('button', { name: 'Mulakan kafe baharu' }).click();
+    await expect(a.getByRole('alertdialog', { name: 'Padam dan mula semula?' })).toBeVisible();
+    await expect(toast(a)).toHaveCount(0, { timeout: 500 });
   });
 
   test('Escape closes only the top-most dialog', async ({ page }) => {
@@ -89,7 +110,7 @@ test.describe('dialogs and toasts', () => {
     const toastBox = await toast(page).boundingBox();
     expect(closeBox && toastBox && toastBox.y + toastBox.height <= closeBox.y).toBe(true);
     await toast(page).click();
-    await expect(toast(page)).toHaveCount(0);
+    await expect(toast(page)).toHaveCount(0, { timeout: 500 });
     await expect(page.getByRole('dialog', { name: 'Tetapan' })).toBeVisible();
   });
 });
