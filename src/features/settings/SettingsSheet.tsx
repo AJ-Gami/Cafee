@@ -86,6 +86,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
               </span>
             </p>
             <p className="mt-2">Permainan ini tidak mengumpul maklumat peribadi dan tiada pembayaran. Format simpanan: versi {SAVE_SCHEMA_VERSION}.</p>
+            <p className="mt-2">Selepas lawatan pertama, permainan boleh dimainkan tanpa internet dan boleh dipasang ke skrin utama melalui menu pelayar.</p>
           </div>
           <div className="mt-3 grid grid-cols-1 gap-2">
             <Button

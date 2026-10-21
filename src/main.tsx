@@ -15,3 +15,12 @@ createRoot(root).render(
     </ErrorBoundary>
   </StrictMode>,
 );
+
+// Offline play: cache the game after the first visit (production builds only).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      // Offline support is optional; the game works without it.
+    });
+  });
+}
