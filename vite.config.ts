@@ -38,10 +38,19 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
-        keys
-          // Older builds of this deployment, plus the pre-namespacing cache name.
-          .filter((key) => (key.startsWith(PREFIX) && key !== CACHE) || /^cafe-empire-[a-z0-9]+$/.test(key))
-          .map((key) => caches.delete(key)),
+        keys.map((key) => {
+          // Older builds of this deployment.
+          if (key.startsWith(PREFIX)) return key === CACHE ? false : caches.delete(key);
+          // Pre-namespacing cache name: remove it only if it holds this deployment's own shell,
+          // so another copy of the game on the same origin keeps its offline cache.
+          if (/^cafe-empire-[a-z0-9]+$/.test(key)) {
+            return caches
+              .open(key)
+              .then((cache) => cache.match(SHELL, { ignoreVary: true }))
+              .then((hit) => (hit ? caches.delete(key) : false));
+          }
+          return false;
+        }),
       ),
     ),
   );
