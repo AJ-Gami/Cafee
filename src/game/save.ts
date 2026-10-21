@@ -349,6 +349,24 @@ export function keepCopy(storage: StorageLike | null, game: GameState, now: Date
   }
 }
 
+/** Remove the oldest kept copy. Returns false when there was none to remove. */
+function dropOldestCopy(storage: StorageLike): boolean {
+  const list = readCopyList(storage);
+  if (list.length === 0) return false;
+  try {
+    if (list.length === 1) storage.removeItem(COPIES_KEY);
+    else storage.setItem(COPIES_KEY, JSON.stringify(list.slice(0, -1)));
+    return true;
+  } catch {
+    try {
+      storage.removeItem(COPIES_KEY);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
 /** Forget a kept copy, wherever it is stored. */
 export function discardCopy(storage: StorageLike | null, game: GameState): void {
   if (!storage) return;
@@ -478,11 +496,15 @@ export function saveGame(
   if (!storage) return { ok: false, error: 'Storan pelayar tidak tersedia. Kemajuan tidak dapat disimpan.' };
   // Key order matters: saveId must precede game so peekSaveId can find it cheaply.
   const envelope: SaveEnvelope = { schemaVersion: SAVE_SCHEMA_VERSION, savedAt: now.toISOString(), saveId, game };
-  try {
-    storage.setItem(SAVE_KEY, JSON.stringify(envelope));
-    return { ok: true, savedAt: envelope.savedAt, saveId };
-  } catch {
-    return { ok: false, error: 'Gagal menyimpan — storan pelayar mungkin penuh atau disekat.' };
+  const text = JSON.stringify(envelope);
+  for (;;) {
+    try {
+      storage.setItem(SAVE_KEY, text);
+      return { ok: true, savedAt: envelope.savedAt, saveId };
+    } catch {
+      // The current game matters more than kept copies: make room by dropping the oldest one.
+      if (!dropOldestCopy(storage)) return { ok: false, error: 'Gagal menyimpan — storan pelayar mungkin penuh atau disekat.' };
+    }
   }
 }
 

@@ -187,6 +187,30 @@ describe('invalid save recovery', () => {
     expect(storage.getItem(BACKUP_KEY)).toBeNull();
   });
 
+  it('drops the oldest kept copies rather than fail to save the current game', () => {
+    const copies = [1, 2, 3].map((seed) => playDays(newGame(seed), 1).state);
+    const data = new Map<string, string>();
+    // A storage with room for the save plus about one kept copy.
+    const quota = exportSave(copies[0]!).length * 2.5;
+    const used = () => [...data.values()].reduce((n, v) => n + v.length, 0);
+    const limited: StorageLike = {
+      getItem: (k) => data.get(k) ?? null,
+      setItem: (k, v) => {
+        if (used() - (data.get(k)?.length ?? 0) + v.length > quota) throw new Error('QuotaExceededError');
+        data.set(k, v);
+      },
+      removeItem: (k) => void data.delete(k),
+    };
+    for (const c of copies) data.set(COPIES_KEY, JSON.stringify([{ schemaVersion: SAVE_SCHEMA_VERSION, savedAt: 'x', game: c }, ...JSON.parse(data.get(COPIES_KEY) ?? '[]')]));
+    expect(readCopies(limited)).toHaveLength(3);
+    const game = playDays(newGame(), 2).state;
+    expect(saveGame(limited, game).ok).toBe(true);
+    expect(loadGame(limited)).toMatchObject({ status: 'loaded', game });
+    const left = readCopies(limited).map((c) => c.game.seed);
+    expect(left.length).toBeLessThan(3);
+    expect(left).toEqual([3, 2, 1].slice(0, left.length)); // the newest copies are the ones kept
+  });
+
   it('copes with storage that refuses writes when keeping a copy', () => {
     const full: StorageLike = {
       getItem: () => null,
