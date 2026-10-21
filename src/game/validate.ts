@@ -8,7 +8,8 @@ import { LOAN_OFFERS } from './data/loans';
 import { OBJECTIVES } from './data/objectives';
 import { PROMOTIONS } from './data/promotions';
 import { UPGRADES } from './data/upgrades';
-import type { GameState } from './types';
+import { installment, remainingPrincipal } from './loans';
+import type { ActiveLoan, GameState } from './types';
 import { PRODUCT_IDS } from './types';
 
 type Obj = Record<string, unknown>;
@@ -161,7 +162,12 @@ function validateReport(v: Validator, value: unknown, path: string): void {
   );
 }
 
-function validateLoan(v: Validator, value: unknown, day: unknown): void {
+/**
+ * The loan must be internally consistent, so every later close keeps producing a valid save.
+ * Its terms are not compared with today's offers: a loan keeps the terms it was taken on.
+ */
+function validateLoan(v: Validator, value: unknown, s: Obj): void {
+  const day = s.day;
   const loan = v.obj(value, 'game.loan');
   if (!loan) return;
   v.oneOf(loan.offerId, Object.keys(LOAN_OFFERS), 'game.loan.offerId');
@@ -174,6 +180,27 @@ function validateLoan(v: Validator, value: unknown, day: unknown): void {
   v.int(loan.paymentsMade, 'game.loan.paymentsMade', 0, term - 1);
   v.int(loan.principalRepaidSen, 'game.loan.principalRepaidSen', 0, typeof loan.principalSen === 'number' ? loan.principalSen - 1 : 0);
   v.int(loan.interestPaidSen, 'game.loan.interestPaidSen', 0, typeof loan.totalInterestSen === 'number' ? loan.totalInterestSen : 0);
+  const errorsBefore = v.errors.length;
+  for (const key of ['principalSen', 'totalInterestSen', 'termDays', 'takenDay', 'paymentsMade', 'principalRepaidSen', 'interestPaidSen']) {
+    v.int(loan[key], `game.loan.${key}`);
+  }
+  if (v.errors.length > errorsBefore || typeof s.lastSettledDay !== 'number') return;
+
+  const l = loan as unknown as Pick<
+    ActiveLoan,
+    'principalSen' | 'totalInterestSen' | 'termDays' | 'takenDay' | 'paymentsMade' | 'principalRepaidSen' | 'interestPaidSen'
+  >;
+  // One installment at every close after the day the loan was taken.
+  v.check(l.paymentsMade === Math.max(0, s.lastSettledDay - l.takenDay), 'game.loan.paymentsMade: tidak sepadan dengan hari yang ditutup');
+  // Before the last installment, every installment is the same size.
+  const first = installment(l, 1);
+  v.check(l.principalRepaidSen === first.principalSen * l.paymentsMade, 'game.loan.principalRepaidSen: tidak sepadan dengan ansuran');
+  v.check(l.interestPaidSen === first.interestSen * l.paymentsMade, 'game.loan.interestPaidSen: tidak sepadan dengan ansuran');
+  // In preparation, a loan taken on an earlier day is still exactly the debt the day started with.
+  const dayStart = s.dayStart as Obj | undefined;
+  if (s.phase === 'prep' && typeof day === 'number' && l.takenDay < day && dayStart) {
+    v.check(dayStart.debtSen === remainingPrincipal(l as ActiveLoan), 'game.dayStart.debtSen: tidak sepadan dengan baki pinjaman');
+  }
 }
 
 export type ValidationResult = { ok: true; state: GameState } | { ok: false; errors: string[] };
@@ -273,7 +300,7 @@ export function validateGameState(value: unknown): ValidationResult {
     v.int(stats.totalNetProfitSen, 'game.stats.totalNetProfitSen');
   }
 
-  if (s.loan !== null) validateLoan(v, s.loan, s.day);
+  if (s.loan !== null) validateLoan(v, s.loan, s);
 
   if (v.errors.length > 0) return { ok: false, errors: v.errors };
   return { ok: true, state: value as GameState };

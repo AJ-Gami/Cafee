@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { gotoApp, navButton, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, toast } from './helpers';
+import { gotoApp, navButton, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, toast, writeSaveAsOtherTab } from './helpers';
 
 test('take a bank loan, pay installments at each close, then settle it early', async ({ page }) => {
   await gotoApp(page, '#/kewangan/pinjaman');
@@ -63,4 +63,22 @@ test('a save from the previous version (v2) is migrated on load', async ({ page 
   const save = await readSave(page);
   expect(save?.schemaVersion).toBe(3);
   expect(save?.game.dayStart.debtSen).toBe(0);
+});
+
+test('after bankruptcy the loan panel shows the final balance and nothing about tomorrow', async ({ page }) => {
+  await gotoApp(page, '#/kewangan/pinjaman');
+  await page.locator('section', { has: page.getByRole('heading', { name: 'Pinjaman Mikro' }) }).getByRole('button', { name: 'Mohon pinjaman' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Ambil pinjaman' }).click();
+  await expect(toast(page)).toContainText('diterima');
+  await writeSaveAsOtherTab(page, (g) => {
+    g.status = 'bankrupt';
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Lihat laporan dahulu' }).click();
+  await expect(page.getByText('Permainan telah tamat')).toBeVisible();
+  await expect(page.getByText('Baki ini ialah kedudukan akhir')).toBeVisible();
+  const card = page.locator('section', { hasText: 'Pinjaman aktif' });
+  await expect(card).toContainText('Baki pokok');
+  await expect(card).not.toContainText('esok');
+  await expect(page.getByRole('button', { name: /Lunaskan|Batalkan/ })).toHaveCount(0);
 });

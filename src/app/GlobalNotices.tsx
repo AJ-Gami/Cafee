@@ -19,8 +19,16 @@ export function GlobalNotices({ onOpenSettings }: { onOpenSettings: () => void }
       ) : null}
       {bootNotice ? (
         <Notice
-          tone={bootNotice.kind === 'corrupt' || bootNotice.kind === 'synced' ? 'warn' : bootNotice.kind === 'migrated' ? 'info' : 'good'}
-          title={bootNotice.kind === 'corrupt' ? 'Simpanan rosak dipulihkan' : undefined}
+          tone={
+            bootNotice.kind === 'corrupt' || bootNotice.kind === 'synced' || bootNotice.kind === 'conflict'
+              ? 'warn'
+              : bootNotice.kind === 'migrated'
+                ? 'info'
+                : 'good'
+          }
+          title={
+            bootNotice.kind === 'corrupt' ? 'Simpanan rosak dipulihkan' : bootNotice.kind === 'conflict' ? 'Tab versi lama dikesan' : undefined
+          }
           onDismiss={dismissBootNotice}
           role="status"
           action={

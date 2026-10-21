@@ -116,7 +116,7 @@ function PrepView() {
             </dd>
           </div>
           <div className="col-span-2 rounded-xl bg-cream-100 p-3">
-            <dt className="text-xs font-semibold uppercase text-espresso-600">Kos tetap dibayar semasa tutup</dt>
+            <dt className="text-xs font-semibold uppercase text-espresso-600">Bayaran tetap semasa tutup</dt>
             <dd className="mt-0.5 text-sm text-espresso-700">
               Gaji <Money sen={fixed.wagesSen} /> · Sewa <Money sen={fixed.rentSen} /> · Utiliti asas <Money sen={fixed.utilitiesBaseSen} />
               {fixed.loanSen > 0 ? (

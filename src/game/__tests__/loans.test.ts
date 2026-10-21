@@ -162,6 +162,16 @@ describe('repaying on schedule', () => {
   });
 });
 
+describe('after bankruptcy', () => {
+  it('shows the loan as final: nothing more is charged or repayable', () => {
+    let s = expectOk(takeLoan(newGame(), 'mikro')).state;
+    s = nextDay(settle(s).state);
+    const bankrupt = { ...settle(s).state, status: 'bankrupt' as const };
+    expect(activeLoanView(bankrupt)).toMatchObject({ gameOver: true, actionTomorrow: false, nextChargedToday: false, canSettle: false });
+    expect(expectFail(repayLoan(bankrupt)).error).toBe('GAME_OVER');
+  });
+});
+
 describe('repaying early', () => {
   it('cancels for free on the day the loan was taken, without counting as repaid', () => {
     const s = newGame();
@@ -281,5 +291,37 @@ describe('saves with loans', () => {
     const s = expectOk(takeLoan(stockAll(newGame(), 10), 'mikro')).state;
     const once = settle(s).state;
     expect(expectFail(openCafe(once, s.day)).error).toBe('ALREADY_SETTLED');
+  });
+});
+
+describe('loan validation invariants', () => {
+  it('accepts every state reached by playing with loans', () => {
+    let s = expectOk(takeLoan(newGame(), 'mikro')).state;
+    for (let i = 0; i < 12; i++) {
+      expect(validateGameState(structuredClone(s)).ok).toBe(true);
+      s = settle(stockAll(s, 10)).state;
+      expect(validateGameState(structuredClone(s)).ok).toBe(true);
+      s = nextDay(s);
+      if (!s.loan && i === 10) s = expectOk(takeLoan(s, 'mikro')).state; // a second loan, taken later
+    }
+    const early = expectOk(repayLoan(nextDay(settle(s).state))).state;
+    expect(validateGameState(structuredClone(early)).ok).toBe(true);
+  });
+
+  it('rejects loans whose paid amounts or payments contradict the schedule', () => {
+    let s = expectOk(takeLoan(newGame(), 'mikro')).state;
+    s = nextDay(settle(s).state);
+    s = nextDay(settle(s).state); // day 3 prep, one installment paid
+    const loan = s.loan!;
+    expect(validateGameState(structuredClone(s)).ok).toBe(true);
+    for (const bad of [
+      { ...loan, interestPaidSen: loan.totalInterestSen },
+      { ...loan, principalRepaidSen: 199_999 },
+      { ...loan, paymentsMade: 0 },
+      { ...loan, paymentsMade: 2, principalRepaidSen: 40_000, interestPaidSen: 2_000 },
+    ]) {
+      expect(validateGameState({ ...structuredClone(s), loan: bad }).ok).toBe(false);
+    }
+    expect(validateGameState({ ...structuredClone(s), dayStart: { ...s.dayStart, debtSen: 200_000 } }).ok).toBe(false);
   });
 });

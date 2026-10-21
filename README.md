@@ -73,10 +73,10 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Reports:** a reconciled P&L, cash flow, an inventory bridge, a debt bridge, 12 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
 - **Weekly summaries:** every 7th day's report (Sunday) opens with a summary of the week (revenue, net profit, customers, profitable days, best day, service rate, cash and reputation movement) compared with the previous week. *Kewangan → Laporan → Mingguan* lists every week, marking the week still being played and any week cut short by the history limit; comparisons are only made between two complete weeks.
 - **Finance:** revenue vs net-profit chart, cash chart, table view, expense breakdown, daily and weekly report history, a transaction ledger and loans.
-- **Persistence:** a versioned save with autosave after every action, validation, migration, corrupt-save backup and recovery, and confirmed reset (also when restarting after bankruptcy).
+- **Persistence:** a versioned save with autosave after every action, validation, migration, corrupt-save backup and recovery (a backup this build can load can be restored from Settings), and confirmed reset (also when restarting after bankruptcy).
 - **Offline & install:** a web app manifest and a build-generated service worker precache every built file (including the lazy charts chunk), so after the first visit the game installs to the home screen and plays fully offline. Pages are fetched network-first so updates arrive whenever online. The worker only handles the game's own shell and files, keeps its caches separate per deployment (so several copies can share an origin), precaches with `cache: 'reload'` so the shell always matches its chunks, and gets a new version whenever any precached file changes.
 - **Backup & device transfer:** Settings can export the save as a JSON file and import one back (validated and migrated exactly like a stored save, with a confirmation before replacing the current game).
-- **Multi-tab safety:** every save write carries a random `saveId`. A tab adopts progress saved by another tab when the `storage` event arrives and re-checks whenever it becomes visible again. Before any game-changing action or manual save it also checks the stored `saveId`, so a stale or suspended tab adopts the newer save and shows a toast instead of overwriting it or settling a day twice.
+- **Multi-tab safety:** every save write carries a random `saveId`. A tab adopts progress saved by another tab when the `storage` event arrives and re-checks whenever it becomes visible again. Before any game-changing action or manual save it also checks the stored `saveId`, so a stale or suspended tab adopts the newer save and shows a toast instead of overwriting it or settling a day twice. Across game versions: a tab still running an older build cannot replace newer progress (the current tab writes its own progress back, keeps a safety copy and warns), and a build that finds a save from a newer version becomes read-only and asks for a reload instead of touching it.
 - **UX:** portrait-first, works from 360px wide, ≥40px touch targets, five-tab bottom navigation, confirmation dialogs for destructive or expensive actions, toasts for every action outcome, and loading, empty, error and insufficient-funds states. Honours `prefers-reduced-motion`.
 
 ---
@@ -148,7 +148,9 @@ src/
 - **Migration:** `migrateSave()` upgrades known older formats step by step (v1 → v2 → v3). The v1 prototype format (money in ringgit decimals, no ledger) becomes v2; v2 saves gain the loan fields (no loan, zero debt, zero interest in past reports) to become v3. Both steps are covered by unit and e2e tests. Newer-than-supported versions are rejected.
 - **Validation:** `validateGameState()` checks types, integer money, ranges, known IDs, phase consistency and report structure.
 - **Write ids:** each write stores a random `saveId` before the game data, so `peekSaveId()` can detect another tab's write without parsing the whole save.
-- **Recovery:** if the save is malformed or invalid, the raw text is copied to `rlt-cafe-empire/save-rosak`, a new game starts and the player sees a notice. If `localStorage` is unavailable (for example in private mode), the game still runs in memory and shows a warning.
+- **Recovery:** if the save is malformed or invalid, the raw text is copied to `rlt-cafe-empire/save-rosak`, a new game starts and the player sees a notice. If that copy is a save this build can load (for example a newer save that an older build moved aside), Settings offers to restore it.
+- **Newer versions:** a save written by a newer version is never treated as corrupt: the game shows a read-only "please reload" screen and neither autosaves nor allows actions, so the newer save is left untouched.
+- **Loan consistency:** an active loan must match its own schedule (payments made = days closed since it was taken, amounts paid = equal installments so far, opening debt = remaining principal), so every later close keeps producing a valid save. If `localStorage` is unavailable (for example in private mode), the game still runs in memory and shows a warning.
 
 ---
 
@@ -158,7 +160,7 @@ src/
 npm test
 ```
 
-There are 118 tests in 9 suites (`src/game/__tests__`):
+There are 125 tests in 9 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -186,6 +188,7 @@ npm run test:e2e
 | `screens.spec.ts` | no horizontal overflow and no touch target under 40px on every screen at 360/390/768px; menu, inventory (low stock, insufficient funds), staff hiring, finance charts/table/report sheet/ledger, share-card download |
 | `persistence.spec.ts` | corrupt-save backup and recovery, v1 migration, confirmed reset, bankruptcy and confirmed restart |
 | `offline.spec.ts` | after the first visit, with the network cut for both the page and the service worker, the game reloads and keeps playing (charts included); other pages on the origin are not answered with the game; manifest and icons are served |
+| `save-versions.spec.ts` | a newer-version save is left untouched (reload screen at start-up and in a running tab); a tab running an older build cannot replace newer progress; a loadable backup copy is restored from Settings |
 | `backup.spec.ts` | export downloads the save; import restores it after a reset; an invalid file is rejected without changes; restoring and going bankrupt again on the same day shows the game-over dialog; keyboard focus stays inside the settings sheet |
 | `loans.spec.ts` | take a loan, installments in reconciled reports, early settlement and its objective; a v2 save migrates on load |
 | `weekly.spec.ts` | seven days played through the UI; the day-7 report shows the week summary; the weekly list and its summary sheet |

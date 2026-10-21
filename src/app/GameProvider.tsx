@@ -2,7 +2,18 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { createNewGame } from '../game/engine';
 import { gameReducer, initStore, type GameAction, type GameStore } from '../game/reducer';
 import { newRandomSeed } from '../game/rng';
-import { clearSave, getBrowserStorage, loadGame, peekSaveId, SAVE_KEY, saveGame, type StorageLike } from '../game/save';
+import {
+  clearSave,
+  getBrowserStorage,
+  loadGame,
+  peekSaveId,
+  readBackup,
+  SAVE_KEY,
+  saveGame,
+  writeBackup,
+  type DecodedSave,
+  type StorageLike,
+} from '../game/save';
 import type { GameState } from '../game/types';
 
 export type BootStatus = 'loading' | 'ready';
@@ -11,7 +22,9 @@ export type BootNotice =
   | { kind: 'corrupt'; message: string }
   | { kind: 'migrated'; message: string }
   | { kind: 'restored'; message: string }
-  | { kind: 'synced'; message: string };
+  | { kind: 'synced'; message: string }
+  /** A tab running an older build of the game wrote older progress; this tab kept its own. */
+  | { kind: 'conflict'; message: string };
 
 export interface SaveInfo {
   status: 'pending' | 'saved' | 'error' | 'unavailable';
@@ -31,8 +44,15 @@ interface GameContextValue {
   /** Write the save now. Returns false when nothing was written (e.g. newer progress was adopted instead). */
   saveNow: () => boolean;
   resetGame: () => void;
-  /** Replace the current game with an imported save (already validated). */
-  importGame: (game: GameState) => void;
+  /** Replace the current game with an imported or restored save (already validated). */
+  importGame: (game: GameState, message?: string) => void;
+  /** The save in the backup key, if this build can load it. */
+  readBackupSave: () => DecodedSave | null;
+  /**
+   * The stored save belongs to a newer version of the game. This tab is read-only (no autosave,
+   * no actions) so it can never overwrite that save; the player is asked to reload.
+   */
+  outdated: boolean;
 }
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -50,6 +70,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [store, rawDispatch] = useReducer(gameReducer, undefined, () => initStore(createNewGame(newRandomSeed())));
   const [boot, setBoot] = useState<BootStatus>('loading');
   const [bootNotice, setBootNotice] = useState<BootNotice | null>(null);
+  const [outdated, setOutdated] = useState(false);
   const [saveInfo, setSaveInfo] = useState<SaveInfo>({
     status: storage ? 'pending' : 'unavailable',
     savedAt: null,
@@ -61,6 +82,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const skipSaveRef = useRef<GameState | null>(null);
   /** The game object last written to storage by this tab. */
   const lastWrittenRef = useRef<GameState | null>(null);
+  /** This tab's current game, for handlers that run outside render. */
+  const gameRef = useRef(store.game);
+  gameRef.current = store.game;
 
   /**
    * Load the save written by another tab and make it this tab's state.
@@ -68,7 +92,28 @@ export function GameProvider({ children }: { children: ReactNode }) {
    */
   const adoptStoredSave = useCallback((reason: 'remote' | 'blocked'): boolean => {
     const result = loadGame(storage);
+    if (result.status === 'newer') {
+      setOutdated(true);
+      return true;
+    }
     if (result.status !== 'loaded') return false;
+    if (result.migratedFrom !== null) {
+      // Only a tab still running an older build writes an older format, and its progress is older
+      // than this tab's: keep ours, put it back in storage (with a safety copy) and warn.
+      const ours = gameRef.current;
+      writeBackup(storage, ours);
+      const saved = saveGame(storage, ours);
+      if (saved.ok) {
+        lastSaveIdRef.current = saved.saveId;
+        lastWrittenRef.current = ours;
+      }
+      setBootNotice({
+        kind: 'conflict',
+        message:
+          'Tab lain sedang menjalankan versi lama permainan ini dan cuba menyimpan kemajuan lama. Kemajuan anda dikekalkan. Tutup atau muat semula tab lama itu.',
+      });
+      return false;
+    }
     skipSaveRef.current = result.game;
     lastWrittenRef.current = result.game;
     lastSaveIdRef.current = result.saveId;
@@ -106,6 +151,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       } else if (result.game.day > 1 || result.game.history.length > 0) {
         setBootNotice({ kind: 'restored', message: `Selamat kembali! Kemajuan Hari ${result.game.day} dipulihkan.` });
       }
+    } else if (result.status === 'newer') {
+      setOutdated(true);
     } else if (result.status === 'corrupt') {
       setBootNotice({
         kind: 'corrupt',
@@ -117,7 +164,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   // Autosave after every state change once the save has been read.
   useEffect(() => {
-    if (boot !== 'ready') return;
+    if (boot !== 'ready' || outdated) return;
     if (!storage) {
       setSaveInfo({ status: 'unavailable', savedAt: null, error: null });
       return;
@@ -133,7 +180,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         ? { status: 'saved', savedAt: result.savedAt, error: null }
         : { status: 'error', savedAt: null, error: result.error },
     );
-  }, [boot, storage, store.game]);
+  }, [boot, outdated, storage, store.game]);
 
   /** True when storage holds a save written by another tab since this tab last read or wrote. */
   const storageIsNewer = useCallback((): boolean => {
@@ -145,7 +192,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   // Also re-check when the page becomes visible again (tab switch, restore from back/forward cache),
   // since storage events can be missed while a page is suspended.
   useEffect(() => {
-    if (!storage || boot !== 'ready') return;
+    if (!storage || boot !== 'ready' || outdated) return;
     const onStorage = (e: StorageEvent) => {
       if (e.key !== SAVE_KEY || e.newValue === null) return;
       if (storageIsNewer()) adoptStoredSave('remote');
@@ -161,7 +208,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('pageshow', onShow);
       document.removeEventListener('visibilitychange', onShow);
     };
-  }, [storage, boot, adoptStoredSave, storageIsNewer]);
+  }, [storage, boot, outdated, adoptStoredSave, storageIsNewer]);
 
   /**
    * Before any action that changes the game, make sure this tab still holds the latest save.
@@ -169,15 +216,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
    */
   const dispatch = useCallback(
     (action: GameAction) => {
+      if (outdated && !LOCAL_ONLY.has(action.type)) return;
       if (boot === 'ready' && storage && !LOCAL_ONLY.has(action.type) && action.type !== 'RESET') {
         if (storageIsNewer() && adoptStoredSave('blocked')) return;
       }
       rawDispatch(action);
     },
-    [boot, storage, adoptStoredSave, storageIsNewer],
+    [boot, outdated, storage, adoptStoredSave, storageIsNewer],
   );
 
   const saveNow = useCallback(() => {
+    if (outdated) return false;
     // A stale tab must never overwrite newer progress, not even through a manual save.
     if (storageIsNewer() && adoptStoredSave('blocked')) return false;
     // Nothing changed since this tab's last write: keep the same id so other tabs do not reload.
@@ -193,24 +242,28 @@ export function GameProvider({ children }: { children: ReactNode }) {
         : { status: storage ? 'error' : 'unavailable', savedAt: null, error: result.error },
     );
     return result.ok;
-  }, [storage, store.game, adoptStoredSave, storageIsNewer]);
+  }, [outdated, storage, store.game, adoptStoredSave, storageIsNewer]);
 
-  const importGame = useCallback((game: GameState) => {
+  const importGame = useCallback((game: GameState, message?: string) => {
+    if (outdated) return;
     // An explicit, confirmed replacement: always written (and adopted by other tabs).
     skipSaveRef.current = null;
     rawDispatch({
       type: 'REPLACE_GAME',
       game,
-      notice: { kind: 'info', message: `Simpanan diimport: ${game.cafeName}, Hari ${game.day}.` },
+      notice: { kind: 'info', message: message ?? `Simpanan diimport: ${game.cafeName}, Hari ${game.day}.` },
     });
     setBootNotice(null);
-  }, []);
+  }, [outdated]);
 
   const resetGame = useCallback(() => {
+    if (outdated) return;
     clearSave(storage);
     rawDispatch({ type: 'RESET', seed: newRandomSeed() });
     setBootNotice(null);
-  }, [storage]);
+  }, [outdated, storage]);
+
+  const readBackupSave = useCallback(() => readBackup(storage), [storage]);
 
   const value = useMemo<GameContextValue>(
     () => ({
@@ -225,8 +278,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       saveNow,
       resetGame,
       importGame,
+      readBackupSave,
+      outdated,
     }),
-    [boot, store, dispatch, saveInfo, storage, bootNotice, saveNow, resetGame, importGame],
+    [boot, store, dispatch, saveInfo, storage, bootNotice, saveNow, resetGame, importGame, readBackupSave, outdated],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

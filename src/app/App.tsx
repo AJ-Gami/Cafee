@@ -1,4 +1,5 @@
-import { Coffee } from 'lucide-react';
+import { Coffee, RefreshCw } from 'lucide-react';
+import { Button } from '../components/Button';
 import { useEffect, useState } from 'react';
 import { Toast } from '../components/Toast';
 import { BusinessScreen } from '../features/business/BusinessScreen';
@@ -35,8 +36,28 @@ function Splash() {
   );
 }
 
+/** Shown instead of the game when the stored save was written by a newer version. */
+function OutdatedScreen() {
+  return (
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center text-espresso-800">
+      <span className="inline-flex size-14 items-center justify-center rounded-2xl bg-espresso-800 text-cream-50">
+        <Coffee className="size-7" aria-hidden="true" />
+      </span>
+      <h1 className="font-display text-2xl">Versi permainan ini sudah lama</h1>
+      <p className="text-[15px] text-espresso-700">
+        Kemajuan anda disimpan oleh versi Café Empire yang lebih baharu. Muat semula halaman untuk mendapatkan versi terkini — kemajuan anda
+        selamat dan tidak diubah.
+      </p>
+      <p className="text-sm text-espresso-600">Jika anda di luar talian, sambung ke internet dahulu.</p>
+      <Button size="lg" onClick={() => window.location.reload()} icon={<RefreshCw className="size-5" aria-hidden="true" />}>
+        Muat semula
+      </Button>
+    </main>
+  );
+}
+
 function Shell() {
-  const { boot, store, dispatch } = useGame();
+  const { boot, store, dispatch, outdated } = useGame();
   const { tab } = useNav();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -46,6 +67,7 @@ function Shell() {
   }, [tab, store.justSettledDay, dispatch]);
 
   if (boot === 'loading') return <Splash />;
+  if (outdated) return <OutdatedScreen />;
 
   return (
     <div className="mx-auto min-h-dvh w-full max-w-md">

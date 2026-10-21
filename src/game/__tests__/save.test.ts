@@ -12,8 +12,10 @@ import {
   migrateSave,
   parseImportedSave,
   peekSaveId,
+  readBackup,
   SAVE_KEY,
   saveGame,
+  writeBackup,
   type StorageLike,
 } from '../save';
 import { validateGameState } from '../validate';
@@ -135,14 +137,30 @@ describe('invalid save recovery', () => {
     }
   });
 
-  it('rejects unknown and future versions', () => {
-    const future = createMemoryStorage({
-      [SAVE_KEY]: JSON.stringify({ schemaVersion: SAVE_SCHEMA_VERSION + 1, savedAt: 'x', game: {} }),
-    });
+  it('leaves a save from a newer version untouched instead of treating it as corrupt', () => {
+    const text = JSON.stringify({ schemaVersion: SAVE_SCHEMA_VERSION + 1, savedAt: 'x', game: {} });
+    const future = createMemoryStorage({ [SAVE_KEY]: text });
     const result = loadGame(future);
-    expect(result.status).toBe('corrupt');
-    if (result.status === 'corrupt') expect(result.error).toContain('lebih baharu');
+    expect(result.status).toBe('newer');
+    if (result.status === 'newer') expect(result.error).toContain('lebih baharu');
+    expect(future.dump()).toEqual({ [SAVE_KEY]: text });
+    expect(parseImportedSave(text)).toMatchObject({ ok: false });
+  });
+
+  it('treats unknown formats as corrupt', () => {
     expect(loadGame(createMemoryStorage({ [SAVE_KEY]: '{"foo":1}' })).status).toBe('corrupt');
+  });
+
+  it('offers the backup copy only when this build can load it', () => {
+    const played = playDays(newGame(), 2).state;
+    expect(readBackup(createMemoryStorage())).toBeNull();
+    expect(readBackup(createMemoryStorage({ [BACKUP_KEY]: '{broken' }))).toBeNull();
+    const storage = createMemoryStorage();
+    expect(writeBackup(storage, played, new Date('2026-03-01T00:00:00Z'))).toBe(true);
+    expect(readBackup(storage)).toMatchObject({ game: played, savedAt: '2026-03-01T00:00:00.000Z', migratedFrom: null });
+    // What an older build leaves behind when it cannot read a current save: the raw text.
+    const moved = createMemoryStorage({ [BACKUP_KEY]: exportSave(played) });
+    expect(readBackup(moved)?.game).toEqual(played);
   });
 
   it('handles unavailable or throwing storage gracefully', () => {

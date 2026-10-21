@@ -203,7 +203,10 @@ function migrateV2toV3(v2: unknown): unknown {
   };
 }
 
-export type MigrationResult = { ok: true; game: unknown; fromVersion: number } | { ok: false; error: string };
+export type MigrationResult =
+  | { ok: true; game: unknown; fromVersion: number }
+  /** `newer`: written by a newer version of the game, so this build must not touch it. */
+  | { ok: false; error: string; newer?: boolean };
 
 /** Bring any known save format up to the current schema version (data is validated afterwards). */
 export function migrateSave(raw: unknown): MigrationResult {
@@ -223,7 +226,7 @@ export function migrateSave(raw: unknown): MigrationResult {
   const fromVersion = version;
 
   if (version > SAVE_SCHEMA_VERSION) {
-    return { ok: false, error: 'Simpanan ini daripada versi permainan yang lebih baharu.' };
+    return { ok: false, error: 'Simpanan ini daripada versi permainan yang lebih baharu.', newer: true };
   }
   if (version === 1) {
     if (!isObj(game)) return { ok: false, error: 'Simpanan v1 rosak.' };
@@ -246,6 +249,8 @@ export type LoadResult =
   | { status: 'empty' }
   | { status: 'loaded'; game: GameState; savedAt: string | null; saveId: string | null; migratedFrom: number | null }
   | { status: 'corrupt'; error: string; backedUp: boolean }
+  /** The save is valid for a newer version of the game: leave it untouched and ask for a reload. */
+  | { status: 'newer'; error: string }
   | { status: 'unavailable' };
 
 export function loadGame(storage: StorageLike | null): LoadResult {
@@ -270,8 +275,37 @@ export function loadGame(storage: StorageLike | null): LoadResult {
   };
 
   const decoded = decodeSave(text);
-  if (!decoded.ok) return corrupt(decoded.error);
+  if (!decoded.ok) return decoded.newer ? { status: 'newer', error: decoded.error } : corrupt(decoded.error);
   return { status: 'loaded', ...decoded.save };
+}
+
+/**
+ * The copy in the backup key, if it is a save this build can load. The backup holds a save moved
+ * aside as unreadable — possibly by an older build that could not read a newer save — or a safety
+ * copy written when an older build's tab overwrote newer progress.
+ */
+export function readBackup(storage: StorageLike | null): DecodedSave | null {
+  if (!storage) return null;
+  let text: string | null;
+  try {
+    text = storage.getItem(BACKUP_KEY);
+  } catch {
+    return null;
+  }
+  if (text === null) return null;
+  const decoded = decodeSave(text);
+  return decoded.ok ? decoded.save : null;
+}
+
+/** Keep a safety copy of `game` in the backup key. */
+export function writeBackup(storage: StorageLike | null, game: GameState, now: Date = new Date()): boolean {
+  if (!storage) return false;
+  try {
+    storage.setItem(BACKUP_KEY, exportSave(game, now));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface DecodedSave {
@@ -282,7 +316,7 @@ export interface DecodedSave {
 }
 
 /** Parse, migrate and validate saved text (from localStorage or an imported file). */
-export function decodeSave(text: string): { ok: true; save: DecodedSave } | { ok: false; error: string } {
+export function decodeSave(text: string): { ok: true; save: DecodedSave } | { ok: false; error: string; newer?: boolean } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -290,7 +324,7 @@ export function decodeSave(text: string): { ok: true; save: DecodedSave } | { ok
     return { ok: false, error: 'Data simpanan bukan JSON yang sah.' };
   }
   const migrated = migrateSave(parsed);
-  if (!migrated.ok) return { ok: false, error: migrated.error };
+  if (!migrated.ok) return { ok: false, error: migrated.error, ...(migrated.newer ? { newer: true } : {}) };
   const validated = validateGameState(migrated.game);
   if (!validated.ok) return { ok: false, error: `Data simpanan tidak sah (${validated.errors.slice(0, 3).join('; ')}).` };
   return {

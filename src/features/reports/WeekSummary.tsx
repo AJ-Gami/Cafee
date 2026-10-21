@@ -84,14 +84,8 @@ export function WeekSummaryCard({ summary: w, closing = false }: { summary: Week
           label={`Hari terbaik: Hari ${w.bestDay.day} (${weekdayName(w.bestDay.day)})`}
           value={<Money sen={w.bestDay.revenueSen} />}
         />
-        <Row
-          label="Tunai"
-          value={
-            <>
-              <Money sen={w.openingCashSen} /> → <Money sen={w.closingCashSen} />
-            </>
-          }
-        />
+        <Row label="Tunai awal minggu" value={<Money sen={w.openingCashSen} />} />
+        <Row label="Tunai akhir minggu" value={<Money sen={w.closingCashSen} />} />
         <Row label="Reputasi" value={`${w.reputationStart} → ${w.reputationEnd}`} />
       </dl>
     </Card>

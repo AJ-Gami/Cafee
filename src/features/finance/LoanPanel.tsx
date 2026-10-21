@@ -30,7 +30,11 @@ export function LoanPanel() {
         Pinjaman memberi tunai serta-merta. Mulai esok, satu ansuran (pokok + faedah) ditolak setiap kali kafe ditutup. Hanya faedah dikira sebagai
         perbelanjaan; bayaran pokok ialah pembiayaan.
       </p>
-      {locked && game.status === 'active' ? (
+      {game.status !== 'active' ? (
+        <Notice tone="bad" title="Permainan telah tamat">
+          Pinjaman tidak lagi boleh diambil atau dilunaskan. Mulakan kafe baharu untuk bermain semula.
+        </Notice>
+      ) : locked ? (
         <Notice tone="info" title="Kafe sudah ditutup untuk hari ini">
           Pinjaman boleh diambil atau dilunaskan semasa persediaan hari seterusnya.
         </Notice>
@@ -50,48 +54,54 @@ export function LoanPanel() {
             <Row label="Baki pokok" value={<Money sen={active.remainingPrincipalSen} />} strong />
             <Row label="Baki faedah (ikut jadual)" value={<Money sen={active.remainingInterestSen} />} />
             <Row label="Ansuran dibayar" value={`${active.loan.paymentsMade}/${active.loan.termDays}`} />
-            <Row
-              label={
-                active.nextChargedToday
-                  ? 'Ansuran semasa tutup hari ini'
-                  : active.loan.paymentsMade === 0
-                    ? 'Ansuran pertama (esok)'
-                    : 'Ansuran seterusnya (esok)'
-              }
-              value={<Money sen={active.nextInstallment.totalSen} />}
-            />
+            {!active.gameOver ? (
+              <Row
+                label={
+                  active.nextChargedToday
+                    ? 'Ansuran semasa tutup hari ini'
+                    : active.loan.paymentsMade === 0
+                      ? 'Ansuran pertama (esok)'
+                      : 'Ansuran seterusnya (esok)'
+                }
+                value={<Money sen={active.nextInstallment.totalSen} />}
+              />
+            ) : null}
           </dl>
-          <div className="mt-3 rounded-xl bg-cream-100 p-3 text-sm text-espresso-700">
-            {active.settlement.cancellation ? (
-              <p>Pinjaman diambil hari ini — anda boleh membatalkannya tanpa faedah dengan memulangkan <Money sen={active.settlement.principalSen} />.</p>
-            ) : (
-              <p>
-                {active.actionTomorrow ? 'Lunaskan awal esok' : 'Lunaskan awal'}: baki pokok <Money sen={active.settlement.principalSen} /> + faedah
-                satu hari <Money sen={active.settlement.interestSen} />. Faedah selebihnya dikecualikan.
-              </p>
-            )}
-          </div>
-          <Button
-            className="mt-3"
-            block
-            variant="secondary"
-            disabled={locked || !active.canSettle}
-            onClick={() => setRepayTarget(game.loan)}
-          >
-            {!active.canSettle ? (
-              'Tunai tak cukup untuk melunaskan'
-            ) : (
-              <>
-                {active.settlement.cancellation ? 'Batalkan pinjaman' : active.actionTomorrow ? 'Lunaskan esok' : 'Lunaskan sekarang'} (
-                <Money sen={active.settlement.totalSen} />)
-              </>
-            )}
-          </Button>
+          {active.gameOver ? (
+            <p className="mt-3 rounded-xl bg-cream-100 p-3 text-sm text-espresso-700">Baki ini ialah kedudukan akhir pinjaman semasa kafe muflis.</p>
+          ) : (
+            <>
+              <div className="mt-3 rounded-xl bg-cream-100 p-3 text-sm text-espresso-700">
+                {active.settlement.cancellation ? (
+                  <p>
+                    Pinjaman diambil hari ini — anda boleh membatalkannya tanpa faedah dengan memulangkan <Money sen={active.settlement.principalSen} />.
+                  </p>
+                ) : (
+                  <p>
+                    {active.actionTomorrow ? 'Lunaskan awal esok' : 'Lunaskan awal'}: baki pokok <Money sen={active.settlement.principalSen} /> + faedah
+                    satu hari <Money sen={active.settlement.interestSen} />. Faedah selebihnya dikecualikan.
+                  </p>
+                )}
+              </div>
+              <Button className="mt-3" block variant="secondary" disabled={locked || !active.canSettle} onClick={() => setRepayTarget(game.loan)}>
+                {!active.canSettle ? (
+                  'Tunai tak cukup untuk melunaskan'
+                ) : (
+                  <>
+                    {active.settlement.cancellation ? 'Batalkan pinjaman' : active.actionTomorrow ? 'Lunaskan esok' : 'Lunaskan sekarang'} (
+                    <Money sen={active.settlement.totalSen} />)
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </Card>
       ) : null}
 
       <h2 className="px-1 pt-1 font-display text-lg text-espresso-800">Tawaran bank</h2>
-      {active ? <p className="px-1 text-sm text-espresso-600">Satu pinjaman pada satu masa. Lunaskan pinjaman semasa untuk memohon yang lain.</p> : null}
+      {active && !active.gameOver ? (
+        <p className="px-1 text-sm text-espresso-600">Satu pinjaman pada satu masa. Lunaskan pinjaman semasa untuk memohon yang lain.</p>
+      ) : null}
       {offers.map((o) => (
         <Card key={o.id}>
           <div className="flex items-start justify-between gap-2">

@@ -286,7 +286,7 @@ export function prepChecklist(state: GameState): PrepChecklistItem[] {
 
   items.push({
     id: 'costs',
-    label: 'Kos tetap hari ini',
+    label: 'Bayaran tetap hari ini',
     detail:
       fixed.loanSen > 0
         ? `Gaji, sewa, utiliti asas & ansuran pinjaman: ${formatRM(fixed.totalSen)} dibayar semasa tutup.`
@@ -363,6 +363,8 @@ export interface ActiveLoanView {
   nextChargedToday: boolean;
   /** True while the café is closed: the loan can next be repaid in tomorrow's preparation. */
   actionTomorrow: boolean;
+  /** The game has ended: no more installments are charged and the loan can no longer be repaid. */
+  gameOver: boolean;
   /** What repaying costs at the next chance to repay (now in preparation, otherwise tomorrow). */
   settlement: SettlementQuote;
   canSettle: boolean;
@@ -371,8 +373,9 @@ export interface ActiveLoanView {
 export function activeLoanView(state: GameState): ActiveLoanView | null {
   const loan = state.loan;
   if (!loan) return null;
+  const gameOver = state.status !== 'active';
   // Once today is settled, its installment is paid and the next chance to act is tomorrow.
-  const actionTomorrow = state.phase !== 'prep';
+  const actionTomorrow = !gameOver && state.phase !== 'prep';
   const settlement = settlementQuote(loan, actionTomorrow ? state.day + 1 : state.day);
   return {
     loan,
@@ -381,9 +384,10 @@ export function activeLoanView(state: GameState): ActiveLoanView | null {
     remainingInterestSen: loan.totalInterestSen - loan.interestPaidSen,
     paymentsLeft: loan.termDays - loan.paymentsMade,
     nextInstallment: installment(loan, loan.paymentsMade + 1),
-    nextChargedToday: !actionTomorrow && state.day > loan.takenDay,
+    nextChargedToday: !gameOver && !actionTomorrow && state.day > loan.takenDay,
     actionTomorrow,
+    gameOver,
     settlement,
-    canSettle: settlement.totalSen <= state.cashSen,
+    canSettle: !gameOver && settlement.totalSen <= state.cashSen,
   };
 }
