@@ -229,6 +229,11 @@ export interface CompletedObjective {
 export interface DayStartSnapshot {
   cashSen: number;
   inventorySen: number;
+  /**
+   * Names of the team when the day started. They are reserved for the whole day so hiring or
+   * firing during preparation never renames today's candidates. Absent in older saves.
+   */
+  staffNames?: string[];
 }
 
 export interface GameState {

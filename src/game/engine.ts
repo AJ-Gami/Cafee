@@ -33,7 +33,7 @@ import { resolveEvent, rollEventForDay, type ResolvedEvent } from './events';
 import { applyBps, formatRM, sumSen } from './money';
 import { currentLevel, evaluateObjectives } from './objectives';
 import { dayRng, RNG_PURPOSE } from './rng';
-import { baristaCount, candidatesForDay, hourlyCapacity, staffSlots } from './staff';
+import { baristaCount, candidatesForState, hourlyCapacity, staffSlots } from './staff';
 import type {
   CustomerSummary,
   DayReport,
@@ -156,7 +156,7 @@ export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME
     upgrades: [],
     promotion: 'none',
     todayEventId: rollEventForDay(seed >>> 0, 1),
-    dayStart: { cashSen: STARTING_CASH_SEN, inventorySen: inventoryValue(products) },
+    dayStart: { cashSen: STARTING_CASH_SEN, inventorySen: inventoryValue(products), staffNames: [STARTING_STAFF.name] },
     dayTransactions: [],
     txSeq: 1,
     lastSettledDay: 0,
@@ -286,7 +286,7 @@ export function setPromotion(state: GameState, promotionId: PromotionId): Engine
 export function hireStaff(state: GameState, candidateId: string): EngineResult {
   const blocked = guardPrep(state);
   if (blocked) return blocked;
-  const candidate = candidatesForDay(state.seed, state.day, state.staff).find((c) => c.id === candidateId);
+  const candidate = candidatesForState(state).find((c) => c.id === candidateId);
   if (!candidate) return fail('UNKNOWN_ITEM', 'Calon ini tidak lagi tersedia.');
   const slots = staffSlots(state.upgrades);
   if (state.staff.length >= slots) {
@@ -627,7 +627,7 @@ export function startNextDay(state: GameState, day: number): EngineResult {
     phase: 'prep',
     promotion: 'none',
     todayEventId: rollEventForDay(state.seed, nextDay),
-    dayStart: { cashSen: state.cashSen, inventorySen: inventoryValue(state.products) },
+    dayStart: { cashSen: state.cashSen, inventorySen: inventoryValue(state.products), staffNames: state.staff.map((s) => s.name) },
     dayTransactions: [],
   };
   return succeed(next, `Selamat pagi! Hari ${nextDay} (${weekdayName(nextDay)}) bermula.`);

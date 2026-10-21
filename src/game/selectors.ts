@@ -13,7 +13,7 @@ import { averageUnitCost, canAfford, inventoryValue, projectedFixedCosts, quoteP
 import { isEventVisibleInPrep, resolveEvent } from './events';
 import { formatRM, marginPercent } from './money';
 import { currentLevel, isObjectiveComplete } from './objectives';
-import { candidatesForDay, hourlyCapacity, staffSlots } from './staff';
+import { candidatesForState, hourlyCapacity, staffSlots } from './staff';
 import type { DayReport, GameState, ProductId, StaffCandidate } from './types';
 import { PRODUCT_IDS } from './types';
 
@@ -138,7 +138,7 @@ export function capacityAfterHire(state: GameState, candidate: StaffCandidate): 
 }
 
 export function hiringCandidates(state: GameState): StaffCandidate[] {
-  return candidatesForDay(state.seed, state.day, state.staff);
+  return candidatesForState(state);
 }
 
 export interface PromotionView extends PromotionDef {

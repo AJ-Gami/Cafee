@@ -1,5 +1,5 @@
 import { Coffee } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Toast } from '../components/Toast';
 import { BusinessScreen } from '../features/business/BusinessScreen';
 import { DashboardScreen } from '../features/dashboard/DashboardScreen';
@@ -36,9 +36,14 @@ function Splash() {
 }
 
 function Shell() {
-  const { boot } = useGame();
+  const { boot, store, dispatch } = useGame();
   const { tab } = useNav();
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Leaving Operasi during the day replay counts as skipping it, so returning shows the report.
+  useEffect(() => {
+    if (tab !== 'operasi' && store.justSettledDay !== null) dispatch({ type: 'PLAYBACK_DONE' });
+  }, [tab, store.justSettledDay, dispatch]);
 
   if (boot === 'loading') return <Splash />;
 

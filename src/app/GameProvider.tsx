@@ -28,7 +28,8 @@ interface GameContextValue {
   storageAvailable: boolean;
   bootNotice: BootNotice | null;
   dismissBootNotice: () => void;
-  saveNow: () => void;
+  /** Write the save now. Returns false when nothing was written (e.g. newer progress was adopted instead). */
+  saveNow: () => boolean;
   resetGame: () => void;
 }
 
@@ -56,14 +57,27 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const lastSaveIdRef = useRef<string | null>(null);
   /** A game object that already matches storage (just loaded or adopted) and must not be written back. */
   const skipSaveRef = useRef<GameState | null>(null);
+  /** The game object last written to storage by this tab. */
+  const lastWrittenRef = useRef<GameState | null>(null);
 
-  /** Load the stored save written by another tab and make it this tab's state. */
-  const adoptStoredSave = useCallback((): boolean => {
+  /**
+   * Load the save written by another tab and make it this tab's state.
+   * `blocked` means the player's action was dropped because of it, so tell them right there.
+   */
+  const adoptStoredSave = useCallback((reason: 'remote' | 'blocked'): boolean => {
     const result = loadGame(storage);
     if (result.status !== 'loaded') return false;
     skipSaveRef.current = result.game;
+    lastWrittenRef.current = result.game;
     lastSaveIdRef.current = result.saveId;
-    rawDispatch({ type: 'REPLACE_GAME', game: result.game });
+    rawDispatch({
+      type: 'REPLACE_GAME',
+      game: result.game,
+      notice:
+        reason === 'blocked'
+          ? { kind: 'error', message: 'Tindakan dibatalkan: kemajuan lebih baharu daripada tab lain telah dimuatkan. Sila semak dan cuba lagi.' }
+          : { kind: 'info', message: `Kemajuan dikemas kini daripada tab lain (Hari ${result.game.day}).` },
+    });
     setSaveInfo({ status: 'saved', savedAt: result.savedAt, error: null });
     setBootNotice({
       kind: 'synced',
@@ -76,6 +90,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const result = loadGame(storage);
     if (result.status === 'loaded') {
       skipSaveRef.current = result.game;
+      lastWrittenRef.current = result.game;
       lastSaveIdRef.current = result.saveId;
       rawDispatch({ type: 'REPLACE_GAME', game: result.game });
       setSaveInfo({ status: 'saved', savedAt: result.savedAt, error: null });
@@ -107,7 +122,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
     if (store.game === skipSaveRef.current) return;
     const result = saveGame(storage, store.game);
-    if (result.ok) lastSaveIdRef.current = result.saveId;
+    if (result.ok) {
+      lastSaveIdRef.current = result.saveId;
+      lastWrittenRef.current = store.game;
+    }
     setSaveInfo(
       result.ok
         ? { status: 'saved', savedAt: result.savedAt, error: null }
@@ -115,16 +133,33 @@ export function GameProvider({ children }: { children: ReactNode }) {
     );
   }, [boot, storage, store.game]);
 
+  /** True when storage holds a save written by another tab since this tab last read or wrote. */
+  const storageIsNewer = useCallback((): boolean => {
+    const storedId = peekSaveId(storage);
+    return typeof storedId === 'string' && storedId !== lastSaveIdRef.current;
+  }, [storage]);
+
   // Another tab saved: adopt its progress immediately so this tab can never overwrite it.
+  // Also re-check when the page becomes visible again (tab switch, restore from back/forward cache),
+  // since storage events can be missed while a page is suspended.
   useEffect(() => {
     if (!storage || boot !== 'ready') return;
     const onStorage = (e: StorageEvent) => {
       if (e.key !== SAVE_KEY || e.newValue === null) return;
-      if (peekSaveId(storage) !== lastSaveIdRef.current) adoptStoredSave();
+      if (storageIsNewer()) adoptStoredSave('remote');
+    };
+    const onShow = () => {
+      if (document.visibilityState === 'visible' && storageIsNewer()) adoptStoredSave('remote');
     };
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [storage, boot, adoptStoredSave]);
+    window.addEventListener('pageshow', onShow);
+    document.addEventListener('visibilitychange', onShow);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('pageshow', onShow);
+      document.removeEventListener('visibilitychange', onShow);
+    };
+  }, [storage, boot, adoptStoredSave, storageIsNewer]);
 
   /**
    * Before any action that changes the game, make sure this tab still holds the latest save.
@@ -133,23 +168,30 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const dispatch = useCallback(
     (action: GameAction) => {
       if (boot === 'ready' && storage && !LOCAL_ONLY.has(action.type) && action.type !== 'RESET') {
-        const storedId = peekSaveId(storage);
-        if (typeof storedId === 'string' && storedId !== lastSaveIdRef.current && adoptStoredSave()) return;
+        if (storageIsNewer() && adoptStoredSave('blocked')) return;
       }
       rawDispatch(action);
     },
-    [boot, storage, adoptStoredSave],
+    [boot, storage, adoptStoredSave, storageIsNewer],
   );
 
   const saveNow = useCallback(() => {
-    const result = saveGame(storage, store.game);
-    if (result.ok) lastSaveIdRef.current = result.saveId;
+    // A stale tab must never overwrite newer progress, not even through a manual save.
+    if (storageIsNewer() && adoptStoredSave('blocked')) return false;
+    // Nothing changed since this tab's last write: keep the same id so other tabs do not reload.
+    const unchanged = store.game === lastWrittenRef.current && lastSaveIdRef.current !== null;
+    const result = saveGame(storage, store.game, new Date(), unchanged ? (lastSaveIdRef.current ?? undefined) : undefined);
+    if (result.ok) {
+      lastSaveIdRef.current = result.saveId;
+      lastWrittenRef.current = store.game;
+    }
     setSaveInfo(
       result.ok
         ? { status: 'saved', savedAt: result.savedAt, error: null }
         : { status: storage ? 'error' : 'unavailable', savedAt: null, error: result.error },
     );
-  }, [storage, store.game]);
+    return result.ok;
+  }, [storage, store.game, adoptStoredSave, storageIsNewer]);
 
   const resetGame = useCallback(() => {
     clearSave(storage);

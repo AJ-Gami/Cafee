@@ -123,7 +123,7 @@ export function DashboardScreen() {
               <span className="text-sm font-normal text-espresso-600">/100</span>
             </span>
           }
-          hint={<ProgressBar value={game.reputation} max={100} label="Reputasi" className="mt-1.5" />}
+          hint={<ProgressBar value={reputationPoints(game.reputation)} max={100} label="Reputasi" className="mt-1.5" />}
         />
         <Stat
           label="Tahap kafe"

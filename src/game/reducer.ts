@@ -32,7 +32,7 @@ export type GameAction =
   | { type: 'OPEN_CAFE'; day: number }
   | { type: 'START_NEXT_DAY'; day: number }
   | { type: 'RENAME'; name: string }
-  | { type: 'REPLACE_GAME'; game: GameState }
+  | { type: 'REPLACE_GAME'; game: GameState; notice?: { kind: 'error' | 'info'; message: string } }
   | { type: 'RESET'; seed: number }
   | { type: 'DISMISS_FEEDBACK'; id: number }
   /** The live replay of a settled day has been watched or skipped. */
@@ -105,8 +105,17 @@ export function gameReducer(store: GameStore, action: GameAction): GameStore {
       return apply(store, startNextDay(g, action.day), { justSettledDay: null });
     case 'RENAME':
       return apply(store, renameCafe(g, action.name));
-    case 'REPLACE_GAME':
-      return { ...store, game: action.game, justSettledDay: null, feedback: null };
+    case 'REPLACE_GAME': {
+      if (!action.notice) return { ...store, game: action.game, justSettledDay: null, feedback: null };
+      const id = store.feedbackSeq + 1;
+      return {
+        ...store,
+        game: action.game,
+        justSettledDay: null,
+        feedbackSeq: id,
+        feedback: { id, kind: action.notice.kind, message: action.notice.message, objectives: [] },
+      };
+    }
     case 'RESET': {
       const id = store.feedbackSeq + 1;
       return {

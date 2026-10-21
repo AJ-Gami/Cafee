@@ -61,7 +61,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Inventory:** purchases with quick quantities, bulk discounts (50+ units 5%, 100+ units 8%), a one-tap restock to the forecast, low/out-of-stock warnings and insufficient-funds states.
 - **Demand model:** reputation, weekday, price elasticity, promotions, upgrades, events, substitution on stock-outs and price objections, and drink→croissant add-ons.
 - **Service capacity:** hourly order capacity from staff (baristas and cashiers) and upgrades. Customers beyond capacity leave.
-- **Staff:** three deterministic candidates each day, a hiring fee, daily wages, firing with confirmation, and staff slots (2, or 4 with an upgrade).
+- **Staff:** three deterministic candidates each day, a hiring fee, daily wages, firing with confirmation, and staff slots (2, or 4 with an upgrade). The team's names are recorded at the start of each day, so hiring or firing never renames or duplicates the day's candidates.
 - **Upgrades (9):** capital investments that affect capacity, footfall, demand, spoilage, reputation, utilities, staff slots or supplier cost, gated by café level.
 - **Promotions (5):** none, social media, flyers, a 10% discount, and an influencer (level 2).
 - **Events (15):** forecast events are visible during preparation and apply from opening (weather, festivals, a supplier price spike and more). Surprise events are revealed on opening and take effect from the hour they happen; for example, the espresso machine breaks at 11:00 and the viral post lands at 12:00 (others include a food reviewer, health inspection, bulk office order and power outage). Some are mitigated by upgrades.
@@ -69,7 +69,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Reports:** a reconciled P&L, cash flow, an inventory bridge, 10 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
 - **Finance:** revenue vs net-profit chart, cash chart, table view, expense breakdown, report history and a transaction ledger.
 - **Persistence:** a versioned save with autosave after every action, validation, migration, corrupt-save backup and recovery, and confirmed reset (also when restarting after bankruptcy).
-- **Multi-tab safety:** every save write carries a random `saveId`. A tab adopts progress saved by another tab as soon as the `storage` event arrives. Before any game-changing action it also checks the stored `saveId`, so a stale or suspended tab adopts the newer save instead of overwriting it or settling a day twice.
+- **Multi-tab safety:** every save write carries a random `saveId`. A tab adopts progress saved by another tab when the `storage` event arrives and re-checks whenever it becomes visible again. Before any game-changing action or manual save it also checks the stored `saveId`, so a stale or suspended tab adopts the newer save and shows a toast instead of overwriting it or settling a day twice.
 - **UX:** portrait-first, works from 360px wide, ≥40px touch targets, five-tab bottom navigation, confirmation dialogs for destructive or expensive actions, toasts for every action outcome, and loading, empty, error and insufficient-funds states. Honours `prefers-reduced-motion`.
 
 ---
@@ -148,13 +148,13 @@ src/
 npm test
 ```
 
-There are 91 tests in 7 suites (`src/game/__tests__`):
+There are 93 tests in 7 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
 | `money.test.ts` | formatting, input parsing, integer rounding |
 | `economy.test.ts` | purchase quotes, bulk discounts, event surcharges, WAC costing, no negative inventory |
-| `engine.test.ts` | starting state, purchases and insufficient funds, atomic batch buys, storage limits, price bounds, disabled products, revenue/COGS/net profit, cash balance, unsold stock is not COGS, spoilage, multi-seed 25-day reconciliation, capacity limits, price elasticity, one settlement per day, phase locking, promotions (including free promotions while cash is negative), staff (stable candidate list after a hire), upgrades, bankruptcy |
+| `engine.test.ts` | starting state, purchases and insufficient funds, atomic batch buys, storage limits, price bounds, disabled products, revenue/COGS/net profit, cash balance, unsold stock is not COGS, spoilage, multi-seed 25-day reconciliation, capacity limits, price elasticity, one settlement per day, phase locking, promotions (including free promotions while cash is negative), staff (candidate list unchanged by hires and fires, unique names), upgrades, bankruptcy |
 | `events.test.ts` | reproducible rolls, hidden surprises, surprise effects starting at the event hour, effects of rain/festival/heatwave/power outage/breakdown/inspection (+mitigation)/contest/office order/reviewer/price spike |
 | `save.test.ts` | save/load round trips, save ids and other-tab write detection, malformed JSON, invalid values, future versions, throwing/unavailable storage, v1 migration, reset |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |

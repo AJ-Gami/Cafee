@@ -2,11 +2,14 @@ import { CircleAlert, CircleCheck, Info, Target } from 'lucide-react';
 import { useEffect } from 'react';
 import { useGame } from '../app/GameProvider';
 import { objectiveDef } from '../game/objectives';
+import { useAnyModalOpen } from './Modal';
 
 /** Transient feedback for player actions (purchase succeeded/failed, objectives reached). */
 export function Toast() {
   const { store, dispatch } = useGame();
   const feedback = store.feedback;
+  // While a dialog or sheet is open, sit at the bottom and let taps pass through to it.
+  const modalOpen = useAnyModalOpen();
 
   useEffect(() => {
     if (!feedback) return;
@@ -16,14 +19,18 @@ export function Toast() {
   }, [feedback, dispatch]);
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[calc(72px+env(safe-area-inset-top,0px))] z-[60] flex justify-center px-4">
+    <div
+      className={`pointer-events-none fixed inset-x-0 z-[60] flex justify-center px-4 ${
+        modalOpen ? 'bottom-[calc(16px+env(safe-area-inset-bottom,0px))]' : 'top-[calc(72px+env(safe-area-inset-top,0px))]'
+      }`}
+    >
       <div aria-live="polite" role="status" className="w-full max-w-md">
         {feedback ? (
           <button
             type="button"
             key={feedback.id}
             onClick={() => dispatch({ type: 'DISMISS_FEEDBACK', id: feedback.id })}
-            className={`pointer-events-auto flex w-full animate-fade-up items-start gap-3 rounded-2xl px-4 py-3 text-left text-[15px] shadow-lift ${
+            className={`${modalOpen ? 'pointer-events-none' : 'pointer-events-auto'} flex w-full animate-fade-up items-start gap-3 rounded-2xl px-4 py-3 text-left text-[15px] shadow-lift ${
               feedback.kind === 'error' ? 'bg-rust-700 text-white' : feedback.kind === 'info' ? 'bg-espresso-800 text-cream-50' : 'bg-sage-800 text-white'
             }`}
           >

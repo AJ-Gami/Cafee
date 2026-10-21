@@ -90,10 +90,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             <Button
               variant="secondary"
               disabled={!storageAvailable}
-              onClick={() => {
-                saveNow();
-                setSavedFlash(true);
-              }}
+              onClick={() => setSavedFlash(saveNow())}
               icon={<Save className="size-4" aria-hidden="true" />}
             >
               Simpan sekarang

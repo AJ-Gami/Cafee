@@ -1,11 +1,25 @@
 import { X } from 'lucide-react';
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /** Open modals, innermost last. Only the top-most one reacts to Escape and traps Tab. */
 const modalStack: symbol[] = [];
+const stackListeners = new Set<() => void>();
+const notifyStack = () => stackListeners.forEach((l) => l());
+
+/** True while any dialog or sheet is open (used to keep toasts clear of modal headers). */
+export function useAnyModalOpen(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      stackListeners.add(listener);
+      return () => stackListeners.delete(listener);
+    },
+    () => modalStack.length > 0,
+    () => false,
+  );
+}
 
 function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.RefObject<HTMLDivElement | null>) {
   const onCloseRef = useRef(onClose);
@@ -16,6 +30,7 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const token = Symbol('modal');
     modalStack.push(token);
+    notifyStack();
     document.body.style.overflow = 'hidden';
     const panel = panelRef.current;
     const first = panel?.querySelector<HTMLElement>('[data-autofocus]') ?? panel?.querySelector<HTMLElement>(FOCUSABLE);
@@ -46,6 +61,7 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
       document.removeEventListener('keydown', onKey);
       const index = modalStack.indexOf(token);
       if (index >= 0) modalStack.splice(index, 1);
+      notifyStack();
       if (modalStack.length === 0) document.body.style.overflow = '';
       previouslyFocused?.focus?.();
     };

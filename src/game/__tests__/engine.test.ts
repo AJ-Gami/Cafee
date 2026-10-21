@@ -16,7 +16,7 @@ import {
 import { reconcileReport } from '../reports';
 import { hiringCandidates } from '../selectors';
 import { sumSen } from '../money';
-import { PRODUCT_IDS } from '../types';
+import { PRODUCT_IDS, type GameState } from '../types';
 import { expectFail, expectOk, newGame, playDays, settle, soldOf, stockAll, TEST_SEED, withEvent } from './helpers';
 
 describe('new game', () => {
@@ -341,6 +341,49 @@ describe('staff', () => {
       if (!pick) continue;
       const after = hiringCandidates(expectOk(hireStaff(s, pick.id)).state);
       expect(after).toEqual(before.filter((c) => c.id !== pick.id));
+    }
+  });
+
+  it('keeps today’s candidates unchanged when an earlier hire is fired', () => {
+    for (let seed = 1; seed <= 150; seed++) {
+      let s = createNewGame(seed);
+      const first = hiringCandidates(s)[0];
+      if (!first) continue;
+      s = expectOk(hireStaff(s, first.id)).state;
+      s = settle(stockAll(s, 30)).state;
+      s = expectOk(startNextDay(s, s.day)).state;
+      const before = hiringCandidates(s);
+      s = expectOk(fireStaff(s, first.id)).state;
+      expect(hiringCandidates(s)).toEqual(before);
+      expect(before.some((c) => c.name === first.name)).toBe(false);
+    }
+  });
+
+  it('never offers a candidate with the same name as someone on the team', () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      let s: GameState = {
+        ...createNewGame(seed),
+        upgrades: ['second_counter'],
+        cashSen: 5_000_000,
+        dayStart: { cashSen: 5_000_000, inventorySen: 0, staffNames: ['Aiman'] },
+      };
+      for (let day = 0; day < 6; day++) {
+        // Hire, then fire a non-founder, then hire again, checking names each step.
+        for (const step of [0, 1, 2]) {
+          const names = new Set(s.staff.map((m) => m.name));
+          for (const c of hiringCandidates(s)) expect(names.has(c.name)).toBe(false);
+          const c = hiringCandidates(s)[step % 2];
+          if (step === 1) {
+            const victim = s.staff.find((m) => m.id !== 'staff-founder');
+            if (victim) s = expectOk(fireStaff(s, victim.id)).state;
+          } else if (c && s.staff.length < 4) {
+            s = expectOk(hireStaff(s, c.id)).state;
+          }
+        }
+        expect(new Set(s.staff.map((m) => m.name)).size).toBe(s.staff.length);
+        s = settle(s).state;
+        s = expectOk(startNextDay(s, s.day)).state;
+      }
     }
   });
 

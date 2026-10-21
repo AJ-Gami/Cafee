@@ -168,7 +168,7 @@ function migrateV1toV2(v1: Obj): GameState {
     staff,
     upgrades,
     lastSettledDay: day - 1,
-    dayStart: { cashSen, inventorySen: inventoryValue(products) },
+    dayStart: { cashSen, inventorySen: inventoryValue(products), staffNames: staff.map((s) => s.name) },
     stats: { ...base.stats, daysCompleted: day - 1 },
   };
 }

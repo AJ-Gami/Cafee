@@ -11,12 +11,16 @@ export function GameOverDialog() {
   // Dismissal is tied to this particular game and day, so a later bankruptcy always shows the dialog again.
   const gameKey = `${game.seed}:${game.day}`;
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-  const [confirmRestart, setConfirmRestart] = useState(false);
-  const open = game.status === 'bankrupt' && dismissedKey !== gameKey;
+  // The restart confirmation belongs to this bankrupt game only; if the game is replaced
+  // (e.g. another tab loaded newer progress) it closes instead of wiping the new game.
+  const [confirmKey, setConfirmKey] = useState<string | null>(null);
+  const bankrupt = game.status === 'bankrupt';
+  const open = bankrupt && dismissedKey !== gameKey;
+  const confirming = bankrupt && confirmKey === gameKey;
 
   return (
     <>
-      <Dialog open={open && !confirmRestart} onClose={() => setDismissedKey(gameKey)} title="Kafe anda muflis" role="alertdialog">
+      <Dialog open={open && !confirming} onClose={() => setDismissedKey(gameKey)} title="Kafe anda muflis" role="alertdialog">
         <p className="mt-2 text-espresso-700">
           Baki tunai kekal negatif selama 3 hari berturut-turut. {game.cafeName} terpaksa ditutup selepas {game.stats.daysCompleted} hari beroperasi.
         </p>
@@ -36,19 +40,20 @@ export function GameOverDialog() {
           <Button variant="secondary" block onClick={() => setDismissedKey(gameKey)} data-autofocus>
             Lihat laporan dahulu
           </Button>
-          <Button variant="accent" block onClick={() => setConfirmRestart(true)}>
+          <Button variant="accent" block onClick={() => setConfirmKey(gameKey)}>
             Mulakan kafe baharu
           </Button>
         </div>
       </Dialog>
       <ConfirmDialog
-        open={confirmRestart}
+        open={confirming}
         title="Padam dan mula semula?"
         confirmLabel="Ya, mula kafe baharu"
         tone="danger"
-        onCancel={() => setConfirmRestart(false)}
+        onCancel={() => setConfirmKey(null)}
         onConfirm={() => {
-          setConfirmRestart(false);
+          setConfirmKey(null);
+          if (game.status !== 'bankrupt') return;
           setDismissedKey(null);
           resetGame();
         }}

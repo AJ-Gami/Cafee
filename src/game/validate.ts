@@ -215,6 +215,13 @@ export function validateGameState(value: unknown): ValidationResult {
   if (dayStart) {
     v.int(dayStart.cashSen, 'game.dayStart.cashSen');
     v.int(dayStart.inventorySen, 'game.dayStart.inventorySen', 0);
+    if (dayStart.staffNames !== undefined) {
+      const names = v.arr(dayStart.staffNames, 'game.dayStart.staffNames');
+      if (names) {
+        v.check(names.length <= 64, 'game.dayStart.staffNames: terlalu banyak');
+        names.forEach((n, i) => v.str(n, `game.dayStart.staffNames[${i}]`, 60));
+      }
+    }
   }
 
   v.arr(s.dayTransactions, 'game.dayTransactions')?.forEach((t, i) => validateTransaction(v, t, `game.dayTransactions[${i}]`));
