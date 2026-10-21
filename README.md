@@ -70,6 +70,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Reports:** a reconciled P&L, cash flow, an inventory bridge, 10 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
 - **Finance:** revenue vs net-profit chart, cash chart, table view, expense breakdown, report history and a transaction ledger.
 - **Persistence:** a versioned save with autosave after every action, validation, migration, corrupt-save backup and recovery, and confirmed reset (also when restarting after bankruptcy).
+- **Backup & device transfer:** Settings can export the save as a JSON file and import one back (validated and migrated exactly like a stored save, with a confirmation before replacing the current game).
 - **Multi-tab safety:** every save write carries a random `saveId`. A tab adopts progress saved by another tab when the `storage` event arrives and re-checks whenever it becomes visible again. Before any game-changing action or manual save it also checks the stored `saveId`, so a stale or suspended tab adopts the newer save and shows a toast instead of overwriting it or settling a day twice.
 - **UX:** portrait-first, works from 360px wide, ≥40px touch targets, five-tab bottom navigation, confirmation dialogs for destructive or expensive actions, toasts for every action outcome, and loading, empty, error and insufficient-funds states. Honours `prefers-reduced-motion`.
 
@@ -149,7 +150,7 @@ src/
 npm test
 ```
 
-There are 93 tests in 7 suites (`src/game/__tests__`):
+There are 97 tests in 7 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -157,7 +158,7 @@ There are 93 tests in 7 suites (`src/game/__tests__`):
 | `economy.test.ts` | purchase quotes, bulk discounts, event surcharges, WAC costing, no negative inventory |
 | `engine.test.ts` | starting state, purchases and insufficient funds, atomic batch buys, storage limits, price bounds, disabled products, revenue/COGS/net profit, cash balance, unsold stock is not COGS, spoilage, multi-seed 25-day reconciliation, capacity limits, price elasticity, one settlement per day, phase locking, promotions (including free promotions while cash is negative), staff (candidate list unchanged by hires and fires, unique names), upgrades, bankruptcy |
 | `events.test.ts` | reproducible rolls, hidden surprises, surprise effects starting at the event hour, effects of rain/festival/heatwave/power outage/breakdown/inspection (+mitigation)/contest/office order/reviewer/price spike |
-| `save.test.ts` | save/load round trips, save ids and other-tab write detection, malformed JSON, invalid values, future versions, throwing/unavailable storage, v1 migration, reset |
+| `save.test.ts` | save/load round trips, export/import (round trip, file naming, invalid and oversized files, v1 import), save ids and other-tab write detection, malformed JSON, invalid values, future versions, throwing/unavailable storage, v1 migration, reset |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
 | `selectors.test.ts` | stock levels, restock plan, forecast never leaks surprises, price preview, hire capacity gain with upgrades, reputation display, chart series, compact labels |
 
@@ -174,6 +175,7 @@ npm run test:e2e
 | `core-loop.spec.ts` | starting state; buy stock → edit price → open → reconciled report → refresh keeps progress → next day; double-tap settles once; no-stock confirmation; leaving the replay |
 | `screens.spec.ts` | no horizontal overflow and no touch target under 40px on every screen at 360/390/768px; menu, inventory (low stock, insufficient funds), staff hiring, finance charts/table/report sheet/ledger, share-card download |
 | `persistence.spec.ts` | corrupt-save backup and recovery, v1 migration, confirmed reset, bankruptcy and confirmed restart |
+| `backup.spec.ts` | export downloads the save; import restores it after a reset; an invalid file is rejected without changes |
 | `multi-tab-and-dialogs.spec.ts` | second tab follows the first, stale-tab action and manual save never overwrite newer progress, toasts never cover dialog buttons or the sheet's close button, Escape closes only the top dialog |
 
 CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e suite on every push and pull request.
@@ -196,7 +198,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 
 ## Known limitations
 
-- Saves are local to one browser on one device. Clearing site data erases progress, and there is no cloud sync or export. Playing in two tabs is safe but not simultaneous: the most recent save wins and the other tab follows it.
+- Saves are local to one browser on one device, and there is no cloud sync. Use Settings → export/import to back up a game or move it to another device. Clearing site data without an exported file erases progress. Playing in two tabs is safe but not simultaneous: the most recent save wins and the other tab follows it.
 - Single café only. There is no multi-branch "empire" layer, ingredient-level recipes, staff morale, loans or depreciation.
 - Report history keeps the latest 60 days. Lifetime totals are kept in stats.
 - Balance is tuned with a scripted bot over ~45 days and would benefit from playtesting.
@@ -204,11 +206,10 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 
 ## Recommended next steps
 
-1. Add save export/import (JSON file) so players can move between devices without a backend.
-2. Add a PWA manifest and service worker for install and offline play.
-3. Add a second-branch expansion, ingredient-level inventory (beans, milk, tea, pastry), loans and simple depreciation.
-4. Add a weekly summary report and goals for weekends and holidays.
-5. Support localisation (English) through a string table.
+1. Add a PWA manifest and service worker for install and offline play.
+2. Add a second-branch expansion, ingredient-level inventory (beans, milk, tea, pastry), loans and simple depreciation.
+3. Add a weekly summary report and goals for weekends and holidays.
+4. Support localisation (English) through a string table.
 
 ### Note on dependency pinning
 

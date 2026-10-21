@@ -31,6 +31,8 @@ interface GameContextValue {
   /** Write the save now. Returns false when nothing was written (e.g. newer progress was adopted instead). */
   saveNow: () => boolean;
   resetGame: () => void;
+  /** Replace the current game with an imported save (already validated). */
+  importGame: (game: GameState) => void;
 }
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -193,6 +195,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return result.ok;
   }, [storage, store.game, adoptStoredSave, storageIsNewer]);
 
+  const importGame = useCallback((game: GameState) => {
+    // An explicit, confirmed replacement: always written (and adopted by other tabs).
+    skipSaveRef.current = null;
+    rawDispatch({
+      type: 'REPLACE_GAME',
+      game,
+      notice: { kind: 'info', message: `Simpanan diimport: ${game.cafeName}, Hari ${game.day}.` },
+    });
+    setBootNotice(null);
+  }, []);
+
   const resetGame = useCallback(() => {
     clearSave(storage);
     rawDispatch({ type: 'RESET', seed: newRandomSeed() });
@@ -211,8 +224,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       dismissBootNotice: () => setBootNotice(null),
       saveNow,
       resetGame,
+      importGame,
     }),
-    [boot, store, dispatch, saveInfo, storage, bootNotice, saveNow, resetGame],
+    [boot, store, dispatch, saveInfo, storage, bootNotice, saveNow, resetGame, importGame],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { SAVE_SCHEMA_VERSION, STARTING_CASH_SEN } from '../constants';
 import { createNewGame, startNextDay } from '../engine';
-import { BACKUP_KEY, clearSave, createMemoryStorage, loadGame, migrateSave, peekSaveId, SAVE_KEY, saveGame, type StorageLike } from '../save';
+import {
+  BACKUP_KEY,
+  clearSave,
+  createMemoryStorage,
+  exportFileName,
+  exportSave,
+  loadGame,
+  MAX_IMPORT_BYTES,
+  migrateSave,
+  parseImportedSave,
+  peekSaveId,
+  SAVE_KEY,
+  saveGame,
+  type StorageLike,
+} from '../save';
 import { validateGameState } from '../validate';
 import { expectOk, newGame, playDays, settle, stockAll } from './helpers';
 
@@ -197,6 +211,48 @@ describe('schema migration', () => {
     const result = loadGame(storage);
     expect(result.status).toBe('loaded');
     if (result.status === 'loaded') expect(result.migratedFrom).toBe(1);
+  });
+});
+
+describe('export and import', () => {
+  it('round-trips a played game through an exported file', () => {
+    const { state } = playDays(newGame(), 6);
+    const text = exportSave(state, new Date('2026-02-01T00:00:00Z'));
+    const imported = parseImportedSave(text);
+    expect(imported.ok).toBe(true);
+    if (imported.ok) {
+      expect(imported.game).toEqual(state);
+      expect(imported.migratedFrom).toBeNull();
+    }
+    // An exported file is also a valid localStorage save.
+    const storage = createMemoryStorage({ [SAVE_KEY]: text });
+    expect(loadGame(storage).status).toBe('loaded');
+  });
+
+  it('names the file after the café and day', () => {
+    expect(exportFileName({ ...newGame(), cafeName: 'Kafé Seri Pagi!', day: 12 })).toBe('cafe-empire-kafe-seri-pagi-hari-12.json');
+    expect(exportFileName({ ...newGame(), cafeName: '咖啡', day: 3 })).toBe('cafe-empire-kafe-hari-3.json');
+  });
+
+  it('rejects files that are not valid saves, with a clear reason', () => {
+    const cases = ['', '   ', 'hello', '{"foo":1}', JSON.stringify({ schemaVersion: 2, savedAt: 'x', game: { ...newGame(), cashSen: 1.5 } })];
+    for (const text of cases) {
+      const result = parseImportedSave(text);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.length).toBeGreaterThan(5);
+    }
+    const huge = parseImportedSave('x'.repeat(MAX_IMPORT_BYTES + 1));
+    expect(huge.ok === false && huge.error).toContain('terlalu besar');
+  });
+
+  it('migrates an imported v1 prototype save', () => {
+    const v1 = { version: 1, seed: 9, day: 3, cash: 1234.5, reputation: 55, products: [], staff: [], upgrades: [] };
+    const result = parseImportedSave(JSON.stringify(v1));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.migratedFrom).toBe(1);
+      expect(result.game.cashSen).toBe(123_450);
+    }
   });
 });
 

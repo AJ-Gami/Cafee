@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Sheet } from '../../components/Modal';
 import { Notice } from '../../components/Notice';
 import { CAFE_NAME_MAX_LENGTH, SAVE_SCHEMA_VERSION } from '../../game/constants';
+import { BackupCard } from './BackupCard';
 
 function formatSavedAt(iso: string | null): string {
   if (!iso) return 'belum disimpan';
@@ -81,7 +82,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
               <ShieldCheck className="mt-0.5 size-4 shrink-0 text-sage-700" aria-hidden="true" />
               <span>
                 Simpanan hanya wujud dalam pelayar ini pada peranti ini (localStorage). Ia <strong>tidak</strong> dihantar ke mana-mana pelayan dan{' '}
-                <strong>tidak</strong> disegerakkan ke awan. Mengosongkan data pelayar atau menukar peranti akan memulakan permainan baharu.
+                <strong>tidak</strong> disegerakkan ke awan. Mengosongkan data pelayar atau menukar peranti akan memulakan permainan baharu — gunakan eksport di bawah untuk membuat sandaran.
               </span>
             </p>
             <p className="mt-2">Permainan ini tidak mengumpul maklumat peribadi dan tiada pembayaran. Format simpanan: versi {SAVE_SCHEMA_VERSION}.</p>
@@ -103,6 +104,8 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             </Button>
           </div>
         </Card>
+
+        <BackupCard />
 
         <Card>
           <CardTitle title="Cara bermain" icon={<BookOpen className="size-5" />} />

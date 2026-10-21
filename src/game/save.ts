@@ -236,26 +236,75 @@ export function loadGame(storage: StorageLike | null): LoadResult {
     return { status: 'corrupt', error, backedUp };
   };
 
+  const decoded = decodeSave(text);
+  if (!decoded.ok) return corrupt(decoded.error);
+  return { status: 'loaded', ...decoded.save };
+}
+
+export interface DecodedSave {
+  game: GameState;
+  savedAt: string | null;
+  saveId: string | null;
+  migratedFrom: number | null;
+}
+
+/** Parse, migrate and validate saved text (from localStorage or an imported file). */
+export function decodeSave(text: string): { ok: true; save: DecodedSave } | { ok: false; error: string } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return corrupt('Data simpanan bukan JSON yang sah.');
+    return { ok: false, error: 'Data simpanan bukan JSON yang sah.' };
   }
   const migrated = migrateSave(parsed);
-  if (!migrated.ok) return corrupt(migrated.error);
+  if (!migrated.ok) return { ok: false, error: migrated.error };
   const validated = validateGameState(migrated.game);
-  if (!validated.ok) return corrupt(`Data simpanan tidak sah (${validated.errors.slice(0, 3).join('; ')}).`);
-
-  const savedAt = isObj(parsed) && typeof parsed.savedAt === 'string' ? parsed.savedAt : null;
-  const saveId = isObj(parsed) && typeof parsed.saveId === 'string' ? parsed.saveId : null;
+  if (!validated.ok) return { ok: false, error: `Data simpanan tidak sah (${validated.errors.slice(0, 3).join('; ')}).` };
   return {
-    status: 'loaded',
-    game: validated.state,
-    savedAt,
-    saveId,
-    migratedFrom: migrated.fromVersion === SAVE_SCHEMA_VERSION ? null : migrated.fromVersion,
+    ok: true,
+    save: {
+      game: validated.state,
+      savedAt: isObj(parsed) && typeof parsed.savedAt === 'string' ? parsed.savedAt : null,
+      saveId: isObj(parsed) && typeof parsed.saveId === 'string' ? parsed.saveId : null,
+      migratedFrom: migrated.fromVersion === SAVE_SCHEMA_VERSION ? null : migrated.fromVersion,
+    },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Export / import (backup or move a game to another browser or device)
+// ---------------------------------------------------------------------------
+
+/** Imported files larger than this are rejected before parsing. Real saves stay well under 1 MB. */
+export const MAX_IMPORT_BYTES = 3_000_000;
+
+/** The save as a downloadable JSON file body (same versioned envelope as localStorage). */
+export function exportSave(game: GameState, now: Date = new Date()): string {
+  const envelope: SaveEnvelope = { schemaVersion: SAVE_SCHEMA_VERSION, savedAt: now.toISOString(), game };
+  return JSON.stringify(envelope);
+}
+
+export function exportFileName(game: GameState): string {
+  const slug =
+    game.cafeName
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 30) || 'kafe';
+  return `cafe-empire-${slug}-hari-${game.day}.json`;
+}
+
+export type ImportResult = { ok: true; game: GameState; migratedFrom: number | null } | { ok: false; error: string };
+
+/** Check an imported file before it may replace the current game. */
+export function parseImportedSave(text: string): ImportResult {
+  if (text.length > MAX_IMPORT_BYTES) return { ok: false, error: 'Fail terlalu besar untuk simpanan Café Empire.' };
+  if (text.trim().length === 0) return { ok: false, error: 'Fail kosong.' };
+  const decoded = decodeSave(text);
+  if (!decoded.ok) return { ok: false, error: `Fail ini bukan simpanan Café Empire yang sah. ${decoded.error}` };
+  return { ok: true, game: decoded.save.game, migratedFrom: decoded.save.migratedFrom };
 }
 
 export type SaveResult = { ok: true; savedAt: string; saveId: string } | { ok: false; error: string };
