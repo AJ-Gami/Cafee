@@ -50,7 +50,8 @@ describe('weekly summaries', () => {
 
   it('marks a week cut off by the history limit as partial, not in progress', () => {
     const weeks = weeklySummaries(reports.slice(4)); // oldest kept report is day 5
-    expect(weeks[0]).toMatchObject({ week: 1, daysPlayed: 3, complete: false, coverage: 'cut_off', firstDay: 1, lastDay: 7 });
+    expect(weeks[0]).toMatchObject({ week: 1, daysPlayed: 3, complete: false, coverage: 'cut_off', firstDay: 1, lastDay: 7, firstPlayedDay: 5, lastPlayedDay: 7 });
+    expect(weeklySummaries(reports).at(-1)).toMatchObject({ coverage: 'in_progress', firstPlayedDay: 15, lastPlayedDay: 16 });
     expect(weeks[1]?.vsPrevious).toBeNull();
   });
 

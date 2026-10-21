@@ -5,7 +5,7 @@ import { Button } from '../../components/Button';
 import { Card, CardTitle } from '../../components/Card';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Money } from '../../components/Money';
-import { exportFileName, exportSave, MAX_IMPORT_BYTES, parseImportedSave } from '../../game/save';
+import { exportFileName, exportSave, isEarlierStateOf, MAX_IMPORT_BYTES, parseImportedSave } from '../../game/save';
 import type { GameState } from '../../game/types';
 
 type Status = { kind: 'idle' } | { kind: 'reading' } | { kind: 'exported'; fileName: string } | { kind: 'error'; message: string };
@@ -16,10 +16,11 @@ export function BackupCard() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [pending, setPending] = useState<{ game: GameState; migratedFrom: number | null; source: 'file' | 'backup' } | null>(null);
-  // A loadable copy in the backup key that differs from the current game can be restored.
+  // Offer the backup only when it holds play the current game does not: restoring an earlier
+  // point of this same game would just roll it back.
   const backup = useMemo(() => {
     const saved = readBackupSave();
-    return saved && JSON.stringify(saved.game) !== JSON.stringify(game) ? saved : null;
+    return saved && !isEarlierStateOf(saved.game, game) ? saved : null;
   }, [readBackupSave, game]);
 
   const onExport = () => {
@@ -107,7 +108,9 @@ export function BackupCard() {
           <p className="mt-0.5 text-sm text-espresso-700">
             {backup.game.cafeName}, Hari {backup.game.day} · tunai <Money sen={backup.game.cashSen} />
           </p>
-          <p className="mt-1 text-xs text-espresso-600">Disimpan secara automatik apabila simpanan tidak dapat dibaca atau ditimpa oleh tab versi lama.</p>
+          <p className="mt-1 text-xs text-espresso-600">
+            Disimpan secara automatik apabila simpanan tidak dapat dibaca, atau apabila tab versi lama menyimpan kemajuan yang berbeza.
+          </p>
           <Button
             className="mt-2"
             block
@@ -139,8 +142,8 @@ export function BackupCard() {
         {pending ? (
           <>
             <p>
-              Permainan semasa ({game.cafeName}, Hari {game.day}) akan digantikan dengan simpanan <strong>{pending.game.cafeName}</strong>, Hari{' '}
-              {pending.game.day}.
+              Permainan semasa ({game.cafeName}, Hari {game.day}, tunai <Money sen={game.cashSen} />) akan digantikan dengan simpanan{' '}
+              <strong>{pending.game.cafeName}</strong>, Hari {pending.game.day}, tunai <Money sen={pending.game.cashSen} />.
             </p>
             {pending.migratedFrom !== null ? (
               <p className="mt-2 text-sm text-espresso-600">

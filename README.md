@@ -76,7 +76,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Persistence:** a versioned save with autosave after every action, validation, migration, corrupt-save backup and recovery (a backup this build can load can be restored from Settings), and confirmed reset (also when restarting after bankruptcy).
 - **Offline & install:** a web app manifest and a build-generated service worker precache every built file (including the lazy charts chunk), so after the first visit the game installs to the home screen and plays fully offline. Pages are fetched network-first so updates arrive whenever online. The worker only handles the game's own shell and files, keeps its caches separate per deployment (so several copies can share an origin), precaches with `cache: 'reload'` so the shell always matches its chunks, and gets a new version whenever any precached file changes.
 - **Backup & device transfer:** Settings can export the save as a JSON file and import one back (validated and migrated exactly like a stored save, with a confirmation before replacing the current game).
-- **Multi-tab safety:** every save write carries a random `saveId`. A tab adopts progress saved by another tab when the `storage` event arrives and re-checks whenever it becomes visible again. Before any game-changing action or manual save it also checks the stored `saveId`, so a stale or suspended tab adopts the newer save and shows a toast instead of overwriting it or settling a day twice. Across game versions: a tab still running an older build cannot replace newer progress (the current tab writes its own progress back, keeps a safety copy and warns), and a build that finds a save from a newer version becomes read-only and asks for a reload instead of touching it.
+- **Multi-tab safety:** every save write carries a random `saveId`. A tab adopts progress saved by another tab when the `storage` event arrives and re-checks whenever it becomes visible again. Before any game-changing action or manual save it also checks the stored `saveId`, so a stale or suspended tab adopts the newer save and shows a toast instead of overwriting it or settling a day twice. Across game versions: an older build cannot read newer saves, so when a tab still running one saves, the current tab keeps whichever copy is further ahead in the main save and sets the other aside in the backup key (restorable from Settings) unless it is just an earlier point of the same game; a build that finds a save from a newer version becomes read-only and asks for a reload instead of touching it.
 - **UX:** portrait-first, works from 360px wide, ≥40px touch targets, five-tab bottom navigation, confirmation dialogs for destructive or expensive actions, toasts for every action outcome, and loading, empty, error and insufficient-funds states. Honours `prefers-reduced-motion`.
 
 ---
@@ -160,7 +160,7 @@ src/
 npm test
 ```
 
-There are 125 tests in 9 suites (`src/game/__tests__`):
+There are 128 tests in 9 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -168,7 +168,7 @@ There are 125 tests in 9 suites (`src/game/__tests__`):
 | `economy.test.ts` | purchase quotes, bulk discounts, event surcharges, WAC costing, no negative inventory |
 | `engine.test.ts` | starting state, purchases and insufficient funds, atomic batch buys, storage limits, price bounds, disabled products, revenue/COGS/net profit, cash balance, unsold stock is not COGS, spoilage, multi-seed 25-day reconciliation, capacity limits, price elasticity, one settlement per day, phase locking, promotions (including free promotions while cash is negative), staff (candidate list unchanged by hires and fires, unique names), upgrades, bankruptcy |
 | `events.test.ts` | reproducible rolls, hidden surprises, surprise effects starting at the event hour, effects of rain/festival/heatwave/power outage/breakdown/inspection (+mitigation)/contest/office order/reviewer/price spike |
-| `save.test.ts` | save/load round trips, export/import (round trip, file naming, invalid and oversized files, v1 import), save ids and other-tab write detection, malformed JSON, invalid values, future versions, throwing/unavailable storage, v1 migration, reset |
+| `save.test.ts` | save/load round trips, export/import (round trip, file naming, invalid and oversized files, v1 import), save ids and other-tab write detection, malformed JSON, invalid values, newer-version saves left untouched, the restorable backup copy, comparing two copies of a game (progress order, earlier point vs diverging branch), throwing/unavailable storage, v1 migration, reset |
 | `loans.test.ts` | exact installment schedules, taking a loan (financing, level lock, one at a time, phase lock), installments at each close until repaid, charges when cash is short, fixed-cost forecast, free same-day cancellation, early settlement, borrowed cash excluded from savings objectives, v2→v3 migration, loan validation |
 | `weekly.test.ts` | week numbering, weekly totals equal their daily reports, comparisons only between complete weeks, partial (history-limited) vs in-progress weeks, the week ending on a day |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
@@ -188,7 +188,7 @@ npm run test:e2e
 | `screens.spec.ts` | no horizontal overflow and no touch target under 40px on every screen at 360/390/768px; menu, inventory (low stock, insufficient funds), staff hiring, finance charts/table/report sheet/ledger, share-card download |
 | `persistence.spec.ts` | corrupt-save backup and recovery, v1 migration, confirmed reset, bankruptcy and confirmed restart |
 | `offline.spec.ts` | after the first visit, with the network cut for both the page and the service worker, the game reloads and keeps playing (charts included); other pages on the origin are not answered with the game; manifest and icons are served |
-| `save-versions.spec.ts` | a newer-version save is left untouched (reload screen at start-up and in a running tab); a tab running an older build cannot replace newer progress; a loadable backup copy is restored from Settings |
+| `save-versions.spec.ts` | a newer-version save is left untouched (reload screen at start-up and in a running tab, with focus on it); an older-build tab that is behind cannot replace newer progress and a diverging copy is kept aside; progress further ahead in an older-build tab is adopted; a loadable backup copy is restored from Settings and focus stays in the sheet |
 | `backup.spec.ts` | export downloads the save; import restores it after a reset; an invalid file is rejected without changes; restoring and going bankrupt again on the same day shows the game-over dialog; keyboard focus stays inside the settings sheet |
 | `loans.spec.ts` | take a loan, installments in reconciled reports, early settlement and its objective; a v2 save migrates on load |
 | `weekly.spec.ts` | seven days played through the UI; the day-7 report shows the week summary; the weekly list and its summary sheet |

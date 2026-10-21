@@ -217,6 +217,9 @@ export interface WeeklySummary {
   lastDay: number;
   /** Days of this week present in the report history. */
   daysPlayed: number;
+  /** First and last day of this week present in the history (the whole week when complete). */
+  firstPlayedDay: number;
+  lastPlayedDay: number;
   /** All seven days are present (same as coverage === 'complete'). */
   complete: boolean;
   /**
@@ -256,6 +259,8 @@ function summarizeWeek(week: number, days: readonly DayReport[], latestDay: numb
     firstDay: (week - 1) * DAYS_PER_WEEK + 1,
     lastDay: week * DAYS_PER_WEEK,
     daysPlayed: days.length,
+    firstPlayedDay: first.day,
+    lastPlayedDay: last.day,
     complete: days.length === DAYS_PER_WEEK,
     coverage:
       days.length === DAYS_PER_WEEK

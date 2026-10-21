@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /** Open modals, innermost last. Only the top-most one reacts to Escape and traps Tab. */
-const modalStack: symbol[] = [];
+const modalStack: { token: symbol; panel: HTMLElement | null }[] = [];
 /** Increases every time any modal opens, even when another closes in the same update. */
 let modalOpenSeq = 0;
 const stackListeners = new Set<() => void>();
@@ -34,18 +34,18 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
     if (!open) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const token = Symbol('modal');
-    modalStack.push(token);
+    const panel = panelRef.current;
+    modalStack.push({ token, panel });
     modalOpenSeq += 1;
     notifyStack();
     document.body.style.overflow = 'hidden';
-    const panel = panelRef.current;
     const first =
       panel?.querySelector<HTMLElement>('[data-autofocus]') ??
       Array.from(panel?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []).find((el) => el.getClientRects().length > 0);
     first?.focus();
 
     const onKey = (e: KeyboardEvent) => {
-      if (modalStack[modalStack.length - 1] !== token) return;
+      if (modalStack[modalStack.length - 1]?.token !== token) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         onCloseRef.current();
@@ -57,7 +57,11 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
       if (items.length === 0) return;
       const firstEl = items[0] as HTMLElement;
       const lastEl = items[items.length - 1] as HTMLElement;
-      if (e.shiftKey && document.activeElement === firstEl) {
+      // Focus can end up outside (e.g. on <body> after the focused control was removed): bring it back.
+      if (!panel.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? lastEl : firstEl).focus();
+      } else if (e.shiftKey && document.activeElement === firstEl) {
         e.preventDefault();
         lastEl.focus();
       } else if (!e.shiftKey && document.activeElement === lastEl) {
@@ -68,11 +72,14 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
-      const index = modalStack.indexOf(token);
+      const index = modalStack.findIndex((m) => m.token === token);
       if (index >= 0) modalStack.splice(index, 1);
       notifyStack();
       if (modalStack.length === 0) document.body.style.overflow = '';
-      previouslyFocused?.focus?.();
+      // Return focus to where it was; if that control is gone (e.g. the button that opened this
+      // dialog was removed by the action), keep focus inside the modal underneath, if any.
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+      else modalStack[modalStack.length - 1]?.panel?.focus();
     };
   }, [open, panelRef]);
 }
@@ -103,7 +110,8 @@ export function Dialog({
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative w-full max-w-sm animate-pop rounded-3xl bg-cream-50 p-5 shadow-lift"
+        tabIndex={-1}
+        className="relative w-full max-w-sm animate-pop rounded-3xl bg-cream-50 p-5 shadow-lift outline-none"
       >
         <h2 id={titleId} className="pr-8 font-display text-xl text-espresso-800">
           {title}
@@ -144,7 +152,8 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative flex max-h-[calc(100dvh-7.5rem-env(safe-area-inset-top,0px))] w-full max-w-md animate-fade-up flex-col rounded-t-3xl bg-cream-100 shadow-lift"
+        tabIndex={-1}
+        className="relative flex max-h-[calc(100dvh-7.5rem-env(safe-area-inset-top,0px))] w-full max-w-md animate-fade-up flex-col rounded-t-3xl bg-cream-100 shadow-lift outline-none"
       >
         <div className="flex items-center justify-between gap-3 border-b border-espresso-800/10 px-4 py-2">
           <h2 id={titleId} className="font-display text-xl text-espresso-800">

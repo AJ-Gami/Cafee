@@ -4,9 +4,11 @@ import { createNewGame, startNextDay } from '../engine';
 import {
   BACKUP_KEY,
   clearSave,
+  compareProgress,
   createMemoryStorage,
   exportFileName,
   exportSave,
+  isEarlierStateOf,
   loadGame,
   MAX_IMPORT_BYTES,
   migrateSave,
@@ -286,5 +288,37 @@ describe('reset behaviour', () => {
     expect(fresh.cashSen).toBe(STARTING_CASH_SEN);
     expect(fresh.history).toEqual([]);
     expect(fresh.completedObjectives).toEqual([]);
+  });
+});
+
+describe('comparing two copies of a game', () => {
+  const start = stockAll(newGame(), 20);
+  const day2 = expectOk(startNextDay(settle(start).state, 1)).state;
+  const day3 = expectOk(startNextDay(settle(stockAll(day2, 5)).state, 2)).state;
+
+  it('orders copies by how far they have been played', () => {
+    expect(compareProgress(day3, day2)).toBeGreaterThan(0);
+    expect(compareProgress(day2, day3)).toBeLessThan(0);
+    expect(compareProgress(settle(day2).state, day2)).toBeGreaterThan(0);
+    expect(compareProgress(stockAll(day2, 5), day2)).toBeGreaterThan(0);
+    expect(compareProgress(day2, day2)).toBe(0);
+  });
+
+  it('recognises an earlier point of the same game', () => {
+    expect(isEarlierStateOf(day2, day3)).toBe(true);
+    expect(isEarlierStateOf(start, day3)).toBe(true);
+    expect(isEarlierStateOf(newGame(), day3)).toBe(true);
+    expect(isEarlierStateOf(day3, day3)).toBe(true);
+    expect(isEarlierStateOf(day3, day2)).toBe(false);
+  });
+
+  it('treats a different game or a diverging branch as real progress to keep', () => {
+    expect(isEarlierStateOf(createNewGame(999), day3)).toBe(false);
+    // Day 2 played differently (more stock bought) from what led to day 3.
+    const branch = stockAll(day2, 40);
+    expect(isEarlierStateOf(branch, day3)).toBe(false);
+    expect(isEarlierStateOf(settle(branch).state, day3)).toBe(false);
+    // The history needed to tell has been trimmed away.
+    expect(isEarlierStateOf(day2, { ...day3, history: day3.history.slice(-1) })).toBe(false);
   });
 });

@@ -279,10 +279,45 @@ export function loadGame(storage: StorageLike | null): LoadResult {
   return { status: 'loaded', ...decoded.save };
 }
 
+// ---------------------------------------------------------------------------
+// Comparing two copies of a game (e.g. a tab running an older build wrote its own copy)
+// ---------------------------------------------------------------------------
+
+/** Orders games by how far they have been played: day, then settled days, then recorded transactions. */
+export function compareProgress(a: GameState, b: GameState): number {
+  return a.day - b.day || a.lastSettledDay - b.lastSettledDay || a.txSeq - b.txSeq;
+}
+
+function startsWith(list: readonly unknown[], prefix: readonly unknown[]): boolean {
+  return prefix.length <= list.length && prefix.every((item, i) => JSON.stringify(item) === JSON.stringify(list[i]));
+}
+
+/**
+ * True when `earlier` is simply an earlier point of the same game as `later` (nothing in it is
+ * missing from `later`), so discarding it loses no play. False for a different game or a
+ * diverging branch, including when the history needed to tell has been trimmed.
+ */
+export function isEarlierStateOf(earlier: GameState, later: GameState): boolean {
+  if (earlier.seed !== later.seed || compareProgress(earlier, later) > 0) return false;
+  const lastReport = earlier.history[earlier.history.length - 1];
+  if (lastReport) {
+    const same = later.history.find((r) => r.day === lastReport.day);
+    if (!same || JSON.stringify(same) !== JSON.stringify(lastReport)) return false;
+  } else if (earlier.lastSettledDay > 0) {
+    return false;
+  }
+  if (earlier.phase === 'prep' && earlier.dayTransactions.length > 0) {
+    // Preparation spending comes first in that day's transactions.
+    const laterTx = later.day === earlier.day ? later.dayTransactions : later.history.find((r) => r.day === earlier.day)?.transactions;
+    if (!laterTx || !startsWith(laterTx, earlier.dayTransactions)) return false;
+  }
+  return true;
+}
+
 /**
  * The copy in the backup key, if it is a save this build can load. The backup holds a save moved
- * aside as unreadable — possibly by an older build that could not read a newer save — or a safety
- * copy written when an older build's tab overwrote newer progress.
+ * aside as unreadable — possibly by an older build that could not read a newer save — or the copy
+ * set aside when a tab running an older build and this build held different progress.
  */
 export function readBackup(storage: StorageLike | null): DecodedSave | null {
   if (!storage) return null;

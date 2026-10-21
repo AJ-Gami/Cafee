@@ -4,7 +4,9 @@ import { gameReducer, initStore, type GameAction, type GameStore } from '../game
 import { newRandomSeed } from '../game/rng';
 import {
   clearSave,
+  compareProgress,
   getBrowserStorage,
+  isEarlierStateOf,
   loadGame,
   peekSaveId,
   readBackup,
@@ -97,23 +99,31 @@ export function GameProvider({ children }: { children: ReactNode }) {
       return true;
     }
     if (result.status !== 'loaded') return false;
-    if (result.migratedFrom !== null) {
-      // Only a tab still running an older build writes an older format, and its progress is older
-      // than this tab's: keep ours, put it back in storage (with a safety copy) and warn.
+    // Only a tab still running an older build writes an older format. That build cannot read this
+    // tab's saves, so either tab may be further ahead: keep the further-ahead game, and set the
+    // other aside in the backup key unless it is just an earlier point of the same game.
+    const fromOldBuild = result.migratedFrom !== null;
+    if (fromOldBuild) {
       const ours = gameRef.current;
-      writeBackup(storage, ours);
-      const saved = saveGame(storage, ours);
-      if (saved.ok) {
-        lastSaveIdRef.current = saved.saveId;
-        lastWrittenRef.current = ours;
+      const theirs = result.game;
+      if (compareProgress(theirs, ours) < 0) {
+        const setAside = !isEarlierStateOf(theirs, ours) && writeBackup(storage, theirs);
+        const saved = saveGame(storage, ours);
+        if (saved.ok) {
+          lastSaveIdRef.current = saved.saveId;
+          lastWrittenRef.current = ours;
+        }
+        setBootNotice({
+          kind: 'conflict',
+          message: `Tab lain menjalankan versi lama permainan ini dan menyimpan kemajuan yang kurang (Hari ${theirs.day}). Kemajuan anda (Hari ${ours.day}) dikekalkan${
+            setAside ? ' dan salinan tab itu boleh dipulihkan dalam Tetapan' : ''
+          }. Muat semula tab lama itu untuk mendapatkan versi terkini.`,
+        });
+        return false;
       }
-      setBootNotice({
-        kind: 'conflict',
-        message:
-          'Tab lain sedang menjalankan versi lama permainan ini dan cuba menyimpan kemajuan lama. Kemajuan anda dikekalkan. Tutup atau muat semula tab lama itu.',
-      });
-      return false;
+      if (!isEarlierStateOf(ours, theirs)) writeBackup(storage, ours);
     }
+    // Not written back, so the old build (if any) can still read what it saved.
     skipSaveRef.current = result.game;
     lastWrittenRef.current = result.game;
     lastSaveIdRef.current = result.saveId;
@@ -126,10 +136,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
           : { kind: 'info', message: `Kemajuan dikemas kini daripada tab lain (Hari ${result.game.day}).` },
     });
     setSaveInfo({ status: 'saved', savedAt: result.savedAt, error: null });
-    setBootNotice({
-      kind: 'synced',
-      message: `Kemajuan dikemas kini daripada tab lain (Hari ${result.game.day}). Permainan ini hanya boleh dimainkan dalam satu tab pada satu masa.`,
-    });
+    setBootNotice(
+      fromOldBuild
+        ? {
+            kind: 'conflict',
+            message: `Kemajuan dikemas kini daripada tab yang menjalankan versi lama permainan ini (Hari ${result.game.day}). Muat semula tab itu untuk mendapatkan versi terkini.`,
+          }
+        : {
+            kind: 'synced',
+            message: `Kemajuan dikemas kini daripada tab lain (Hari ${result.game.day}). Permainan ini hanya boleh dimainkan dalam satu tab pada satu masa.`,
+          },
+    );
     return true;
   }, [storage]);
 

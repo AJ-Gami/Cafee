@@ -1,6 +1,6 @@
 import { Coffee, RefreshCw } from 'lucide-react';
 import { Button } from '../components/Button';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Toast } from '../components/Toast';
 import { BusinessScreen } from '../features/business/BusinessScreen';
 import { DashboardScreen } from '../features/dashboard/DashboardScreen';
@@ -38,12 +38,17 @@ function Splash() {
 
 /** Shown instead of the game when the stored save was written by a newer version. */
 function OutdatedScreen() {
+  // It replaces the whole game, possibly mid-action: move focus here so the change is announced.
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => headingRef.current?.focus(), []);
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center text-espresso-800">
       <span className="inline-flex size-14 items-center justify-center rounded-2xl bg-espresso-800 text-cream-50">
         <Coffee className="size-7" aria-hidden="true" />
       </span>
-      <h1 className="font-display text-2xl">Versi permainan ini sudah lama</h1>
+      <h1 ref={headingRef} tabIndex={-1} className="font-display text-2xl outline-none">
+        Versi permainan ini sudah lama
+      </h1>
       <p className="text-[15px] text-espresso-700">
         Kemajuan anda disimpan oleh versi Café Empire yang lebih baharu. Muat semula halaman untuk mendapatkan versi terkini — kemajuan anda
         selamat dan tidak diubah.
