@@ -8,6 +8,14 @@ import { Money } from '../../components/Money';
 import { exportFileName, exportSave, isEarlierStateOf, MAX_IMPORT_BYTES, parseImportedSave } from '../../game/save';
 import type { GameState } from '../../game/types';
 
+/** When a copy was set aside, e.g. "22 Okt, 09:15" (null when unknown). */
+function savedAtLabel(savedAt: string | null): string | null {
+  if (!savedAt) return null;
+  const date = new Date(savedAt);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString('ms-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
 type Status = { kind: 'idle' } | { kind: 'reading' } | { kind: 'exported'; fileName: string } | { kind: 'error'; message: string };
 
 /** Export the save to a file, or import one, to back up or move a game between browsers and devices. */
@@ -21,7 +29,14 @@ export function BackupCard() {
   // Offer only copies holding play the current game does not: restoring an earlier point of this
   // same game would just roll it back.
   const copies = useMemo(
-    () => readCopies().filter((c) => !isEarlierStateOf(c.game, game)),
+    () => {
+      const all = readCopies().filter((c) => !isEarlierStateOf(c.game, game));
+      // A copy that is only an earlier point of another listed copy adds nothing (of two equal
+      // copies, the first listed stays).
+      return all.filter(
+        (c, i) => !all.some((other, j) => j !== i && isEarlierStateOf(c.game, other.game) && (j < i || !isEarlierStateOf(other.game, c.game))),
+      );
+    },
     // copiesVersion changes after a copy is discarded, to read the list again.
     [readCopies, game, copiesVersion],
   );
@@ -114,12 +129,14 @@ export function BackupCard() {
             Disimpan secara automatik apabila simpanan tidak dapat dibaca, atau apabila tab versi lama menyimpan kemajuan yang berbeza.
           </p>
           <ul className="mt-2 space-y-3">
-            {copies.map((c) => {
-              const label = `${c.game.cafeName}, Hari ${c.game.day}`;
+            {copies.map((c, i) => {
+              const state = c.game.status !== 'active' ? ' (muflis)' : c.game.phase === 'closed' ? ' (ditutup)' : '';
+              const label = `${c.game.cafeName}, Hari ${c.game.day}${state}`;
               return (
-                <li key={JSON.stringify([c.game.seed, c.game.day, c.game.txSeq, c.game.cashSen])}>
+                <li key={`${i}-${c.game.seed}-${c.game.day}-${c.game.txSeq}`}>
                   <p className="text-sm text-espresso-700">
                     {label} · tunai <Money sen={c.game.cashSen} />
+                    {savedAtLabel(c.savedAt) ? <span className="block text-xs text-espresso-600">Disimpan {savedAtLabel(c.savedAt)}</span> : null}
                   </p>
                   <div className="mt-1.5 grid grid-cols-2 gap-2">
                     <Button

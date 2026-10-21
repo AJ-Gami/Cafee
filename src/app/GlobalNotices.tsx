@@ -38,7 +38,7 @@ export function GlobalNotices({ onOpenSettings }: { onOpenSettings: () => void }
           onDismiss={dismissBootNotice}
           role="status"
           action={
-            bootNotice.kind === 'corrupt' || bootNotice.kind === 'copy' ? (
+            bootNotice.kind === 'corrupt' || bootNotice.kind === 'copy' || bootNotice.kind === 'conflict' ? (
               <button type="button" onClick={onOpenSettings} className="min-h-11 font-semibold underline underline-offset-2">
                 Tetapan simpanan
               </button>

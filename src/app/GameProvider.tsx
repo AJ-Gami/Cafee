@@ -8,12 +8,12 @@ import {
   compareProgress,
   discardCopy as discardStoredCopy,
   getBrowserStorage,
-  isEarlierStateOf,
   keepCopy,
   loadGame,
   peekSaveId,
   readCopies,
   readLegacyBackup,
+  resolveOldBuildWrite,
   SAVE_KEY,
   saveGame,
   type DecodedSave,
@@ -103,8 +103,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const rescueLegacyBackup = useCallback(
     (current: GameState): GameState | null => {
       const legacy = readLegacyBackup(storage);
-      if (!legacy || isEarlierStateOf(legacy.game, current)) return null;
-      keepCopy(storage, legacy.game);
+      if (!legacy || !keepCopy(storage, legacy.game, new Date(), current)) return null;
       return legacy.game;
     },
     [storage],
@@ -122,28 +121,35 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
     if (result.status !== 'loaded') return false;
     // Only a tab still running an older build writes an older format. That build cannot read this
-    // tab's saves, so either tab may be further ahead: keep the further-ahead game, and set the
-    // other aside in the backup key unless it is just an earlier point of the same game.
+    // tab's saves, so decide which game stays (see resolveOldBuildWrite) and keep the other as a
+    // restorable copy unless it is just an earlier point of the one that stays.
     const fromOldBuild = result.migratedFrom !== null;
+    let keptOurs = false;
+    const ours = gameRef.current;
     if (fromOldBuild) {
-      const ours = gameRef.current;
       const theirs = result.game;
-      if (compareProgress(theirs, ours) < 0) {
-        const setAside = !isEarlierStateOf(theirs, ours) && keepCopy(storage, theirs);
+      if (resolveOldBuildWrite(ours, theirs) === 'ours') {
+        const keptTheirs = keepCopy(storage, theirs, new Date(), ours);
         const saved = saveGame(storage, ours);
         if (saved.ok) {
           lastSaveIdRef.current = saved.saveId;
           lastWrittenRef.current = ours;
         }
+        const what =
+          theirs.seed === ours.seed
+            ? `kemajuan yang kurang (Hari ${theirs.day})`
+            : theirs.status !== 'active'
+              ? `kafe yang telah muflis (${theirs.cafeName}, Hari ${theirs.day})`
+              : `permainan lain (${theirs.cafeName}, Hari ${theirs.day})`;
         setBootNotice({
           kind: 'conflict',
-          message: `Tab lain menjalankan versi lama permainan ini dan menyimpan kemajuan yang kurang (Hari ${theirs.day}). Kemajuan anda (Hari ${ours.day}) dikekalkan${
-            setAside ? ' dan salinan tab itu boleh dipulihkan dalam Tetapan' : ''
+          message: `Tab lain menjalankan versi lama permainan ini dan menyimpan ${what}. Permainan anda (Hari ${ours.day}) dikekalkan${
+            keptTheirs ? ' dan salinan tab itu boleh dipulihkan dalam Tetapan' : ''
           }. Muat semula tab lama itu untuk mendapatkan versi terkini.`,
         });
         return false;
       }
-      if (!isEarlierStateOf(ours, theirs)) keepCopy(storage, ours);
+      keptOurs = keepCopy(storage, ours, new Date(), theirs);
     }
     // Not written back, so the old build (if any) can still read what it saved.
     skipSaveRef.current = result.game;
@@ -162,7 +168,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       fromOldBuild
         ? {
             kind: 'conflict',
-            message: `Kemajuan dikemas kini daripada tab yang menjalankan versi lama permainan ini (Hari ${result.game.day}). Muat semula tab itu untuk mendapatkan versi terkini.`,
+            message: `Kemajuan dikemas kini daripada tab yang menjalankan versi lama permainan ini (${result.game.cafeName}, Hari ${result.game.day}).${
+              keptOurs ? ` Permainan tab ini sebelumnya (${ours.cafeName}, Hari ${ours.day}) disimpan dan boleh dipulihkan dalam Tetapan.` : ''
+            } Muat semula tab lama itu untuk mendapatkan versi terkini.`,
           }
         : {
             kind: 'synced',

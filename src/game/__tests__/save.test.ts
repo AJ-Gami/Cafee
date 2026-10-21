@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SAVE_SCHEMA_VERSION, STARTING_CASH_SEN } from '../constants';
-import { createNewGame, startNextDay } from '../engine';
+import { createNewGame, hireStaff, startNextDay } from '../engine';
+import { hiringCandidates } from '../selectors';
+import type { GameState } from '../types';
 import {
   BACKUP_KEY,
   clearSave,
@@ -16,6 +18,7 @@ import {
   peekSaveId,
   readCopies,
   readLegacyBackup,
+  resolveOldBuildWrite,
   SAVE_KEY,
   saveGame,
   keepCopy,
@@ -168,22 +171,22 @@ describe('invalid save recovery', () => {
     const storage = createMemoryStorage();
     expect(keepCopy(storage, a, new Date('2026-03-01T00:00:00Z'))).toBe(true);
     keepCopy(storage, b);
-    keepCopy(storage, a); // the same game again moves to the front instead of duplicating
-    expect(readCopies(storage).map((x) => x.game)).toEqual([a, b]);
+    expect(keepCopy(storage, a)).toBe(true); // already kept: not duplicated
+    expect(readCopies(storage).map((x) => x.game)).toEqual([b, a]);
     keepCopy(storage, c);
     keepCopy(storage, d);
-    expect(readCopies(storage).map((x) => x.game)).toEqual([d, c, a]);
+    expect(readCopies(storage).map((x) => x.game)).toEqual([d, c, b]);
     expect(MAX_KEPT_COPIES).toBe(3);
 
     // What an older build leaves in BACKUP_KEY when it cannot read a current save is listed last.
-    storage.setItem(BACKUP_KEY, exportSave(b));
-    expect(readCopies(storage).map((x) => x.game)).toEqual([d, c, a, b]);
+    storage.setItem(BACKUP_KEY, exportSave(a));
+    expect(readCopies(storage).map((x) => x.game)).toEqual([d, c, b, a]);
     storage.setItem(BACKUP_KEY, exportSave(c));
-    expect(readCopies(storage).map((x) => x.game)).toEqual([d, c, a]);
+    expect(readCopies(storage).map((x) => x.game)).toEqual([d, c, b]);
     expect(readLegacyBackup(storage)?.game).toEqual(c);
 
     discardCopy(storage, c);
-    expect(readCopies(storage).map((x) => x.game)).toEqual([d, a]);
+    expect(readCopies(storage).map((x) => x.game)).toEqual([d, b]);
     expect(storage.getItem(BACKUP_KEY)).toBeNull();
   });
 
@@ -379,5 +382,88 @@ describe('comparing two copies of a game', () => {
     expect(isEarlierStateOf(settle(branch).state, day3)).toBe(false);
     // The history needed to tell has been trimmed away.
     expect(isEarlierStateOf(day2, { ...day3, history: day3.history.slice(-1) })).toBe(false);
+  });
+});
+
+describe('comparing copies written by different builds', () => {
+  /** The same game as a v2 build stored it, after migration: equal content, different key order. */
+  function viaV2(game: GameState): GameState {
+    const g = structuredClone(game) as unknown as Record<string, unknown> & {
+      dayStart: Record<string, unknown>;
+      stats: Record<string, unknown>;
+      history: (Record<string, unknown> & { expenses: Record<string, unknown> })[];
+    };
+    g.schemaVersion = 2;
+    delete g.loan;
+    delete g.dayStart.debtSen;
+    delete g.stats.loansRepaid;
+    for (const r of g.history) {
+      for (const k of ['loanProceedsSen', 'loanPrincipalRepaidSen', 'openingDebtSen', 'closingDebtSen']) delete r[k];
+      delete r.expenses.interestSen;
+    }
+    const migrated = migrateSave({ schemaVersion: 2, savedAt: 'x', game: g });
+    if (!migrated.ok) throw new Error(migrated.error);
+    return migrated.game as GameState;
+  }
+
+  it('compares content, not the order fields were written in', () => {
+    const played = playDays(newGame(), 3).state;
+    const old = viaV2(played);
+    expect(JSON.stringify(old.history[0]) === JSON.stringify(played.history[0])).toBe(false);
+    expect(isEarlierStateOf(old, played)).toBe(true);
+    expect(isEarlierStateOf(played, old)).toBe(true);
+  });
+
+  it('recognises a mid-preparation snapshot once that day has been settled', () => {
+    const prep = stockAll(newGame(), 20);
+    const closed = settle(prep).state;
+    expect(isEarlierStateOf(prep, closed)).toBe(true);
+    expect(isEarlierStateOf(prep, expectOk(startNextDay(closed, 1)).state)).toBe(true);
+  });
+
+  it('treats same-day changes that record no transaction as play to keep', () => {
+    const prep = stockAll(newGame(), 20);
+    const renamed = { ...prep, cafeName: 'Kafe Baru' };
+    const repriced = { ...prep, products: { ...prep.products, latte: { ...prep.products.latte, priceSen: 800 } } };
+    const bought = stockAll(prep, 5);
+    expect(isEarlierStateOf(renamed, bought)).toBe(false);
+    expect(isEarlierStateOf(repriced, bought)).toBe(false);
+    // Hiring records a transaction, so a later state may simply have more staff.
+    const candidate = hiringCandidates(prep)[0]!;
+    expect(isEarlierStateOf(prep, expectOk(hireStaff(prep, candidate.id)).state)).toBe(true);
+  });
+
+  it('decides which game stays when an older build writes', () => {
+    const day2 = playDays(newGame(), 1).state;
+    const day4 = playDays(newGame(), 3).state;
+    const other = playDays(newGame(999), 5).state;
+    expect(resolveOldBuildWrite(day4, day2)).toBe('ours');
+    expect(resolveOldBuildWrite(day2, day4)).toBe('theirs');
+    expect(resolveOldBuildWrite(day2, day2)).toBe('theirs');
+    // Different games: this tab's game stays, unless it is bankrupt and the other is not.
+    expect(resolveOldBuildWrite(day2, other)).toBe('ours');
+    expect(resolveOldBuildWrite({ ...day2, status: 'bankrupt' }, other)).toBe('theirs');
+    expect(resolveOldBuildWrite(day2, { ...other, status: 'bankrupt' })).toBe('ours');
+  });
+
+  it('keeps only copies holding play the current game and other copies lack', () => {
+    const storage = createMemoryStorage();
+    const start = stockAll(newGame(), 20);
+    const day2 = expectOk(startNextDay(settle(start).state, 1)).state;
+    const day3 = expectOk(startNextDay(settle(stockAll(day2, 5)).state, 2)).state;
+    const other = playDays(newGame(555), 2).state;
+
+    expect(keepCopy(storage, newGame())).toBe(false); // nothing played
+    expect(keepCopy(storage, day2, new Date(), day3)).toBe(false); // earlier point of the game in play
+    expect(keepCopy(storage, other)).toBe(true);
+    expect(keepCopy(storage, day2)).toBe(true);
+    expect(keepCopy(storage, day3)).toBe(true); // replaces its own earlier point, day 2
+    expect(readCopies(storage).map((c) => c.game.day)).toEqual([3, 3]);
+    expect(readCopies(storage)[1]?.game.seed).toBe(555);
+    expect(keepCopy(storage, start)).toBe(true); // already contained in the day-3 copy
+    expect(readCopies(storage)).toHaveLength(2);
+    // The same game written by another build is one copy, not two.
+    storage.setItem(BACKUP_KEY, exportSave(other));
+    expect(readCopies(storage)).toHaveLength(2);
   });
 });

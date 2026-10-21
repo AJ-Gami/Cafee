@@ -74,7 +74,7 @@ test('an older-build tab that is behind cannot replace newer progress; a divergi
   // The old tab still holds day 1 exactly: nothing in it is missing from day 2, so nothing is kept aside.
   await writeAsOldBuild(old, day1, 'old-1');
   await expect(a.getByText('Tab versi lama dikesan')).toBeVisible();
-  await expect(a.getByText(/kemajuan yang kurang \(Hari 1\)\. Kemajuan anda \(Hari 2\) dikekalkan\. Muat semula/)).toBeVisible();
+  await expect(a.getByText(/kemajuan yang kurang \(Hari 1\)\. Permainan anda \(Hari 2\) dikekalkan\. Muat semula/)).toBeVisible();
   expect((await readSave(a))?.game.day).toBe(2);
   expect((await readSave(a))?.schemaVersion).toBe(3);
   expect(await keptCopies(a)).toEqual([]);
@@ -109,7 +109,7 @@ test('progress made further ahead in an older-build tab is adopted, not reverted
   await expect(a.getByRole('heading', { name: 'Persediaan Hari 1' })).toBeVisible();
   await writeAsOldBuild(old, day2, 'old-ahead');
   await expect(a.getByRole('heading', { name: 'Persediaan Hari 2' })).toBeVisible();
-  await expect(a.getByText(/Kemajuan dikemas kini daripada tab yang menjalankan versi lama permainan ini \(Hari 2\)/)).toBeVisible();
+  await expect(a.getByText(/Kemajuan dikemas kini daripada tab yang menjalankan versi lama permainan ini \(Kopi Kita, Hari 2\)/)).toBeVisible();
   // Not written back: the old build can still read what it saved, and nothing needed setting aside.
   const stored = await readSave(a);
   expect(stored?.schemaVersion).toBe(2);

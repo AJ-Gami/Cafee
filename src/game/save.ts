@@ -288,8 +288,32 @@ export function compareProgress(a: GameState, b: GameState): number {
   return a.day - b.day || a.lastSettledDay - b.lastSettledDay || a.txSeq - b.txSeq;
 }
 
+/**
+ * JSON with object keys sorted, so equal content compares equal whichever build wrote it (a
+ * migrated report lists its fields in a different order than one the current engine writes).
+ */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    isObj(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v,
+  );
+}
+
 function startsWith(list: readonly unknown[], prefix: readonly unknown[]): boolean {
-  return prefix.length <= list.length && prefix.every((item, i) => JSON.stringify(item) === JSON.stringify(list[i]));
+  return prefix.length <= list.length && prefix.every((item, i) => canonical(item) === canonical(list[i]));
+}
+
+/**
+ * Choices that record no transaction (name, prices, menu, promotion, firing) are the same in
+ * `later`. Hiring and upgrades do record one, so `later` may have more staff or upgrades.
+ */
+function sameUntrackedChoices(earlier: GameState, later: GameState): boolean {
+  const laterStaff = new Set(later.staff.map((s) => s.id));
+  return (
+    earlier.cafeName === later.cafeName &&
+    earlier.promotion === later.promotion &&
+    earlier.staff.every((s) => laterStaff.has(s.id)) &&
+    PRODUCT_IDS.every((id) => earlier.products[id].priceSen === later.products[id].priceSen && earlier.products[id].enabled === later.products[id].enabled)
+  );
 }
 
 /**
@@ -302,16 +326,34 @@ export function isEarlierStateOf(earlier: GameState, later: GameState): boolean 
   const lastReport = earlier.history[earlier.history.length - 1];
   if (lastReport) {
     const same = later.history.find((r) => r.day === lastReport.day);
-    if (!same || JSON.stringify(same) !== JSON.stringify(lastReport)) return false;
+    if (!same || canonical(same) !== canonical(lastReport)) return false;
   } else if (earlier.lastSettledDay > 0) {
     return false;
   }
-  if (earlier.phase === 'prep' && earlier.dayTransactions.length > 0) {
-    // Preparation spending comes first in that day's transactions.
-    const laterTx = later.day === earlier.day ? later.dayTransactions : later.history.find((r) => r.day === earlier.day)?.transactions;
-    if (!laterTx || !startsWith(laterTx, earlier.dayTransactions)) return false;
+  if (earlier.phase === 'prep') {
+    const laterSettledThatDay = later.lastSettledDay >= earlier.day;
+    if (earlier.dayTransactions.length > 0) {
+      // Preparation spending comes first in that day's transactions.
+      const laterTx = laterSettledThatDay ? later.history.find((r) => r.day === earlier.day)?.transactions : later.dayTransactions;
+      if (!laterTx || !startsWith(laterTx, earlier.dayTransactions)) return false;
+    }
+    // While both are preparing the same day, choices that record no transaction must match too.
+    if (!laterSettledThatDay && !sameUntrackedChoices(earlier, later)) return false;
   }
   return true;
+}
+
+/**
+ * Which copy to keep when a tab running an older build saved `theirs` while this tab holds
+ * `ours` (that build cannot read this tab's saves, so either may be further ahead). Within one
+ * game the further-ahead copy wins (on a tie, theirs: that tab just acted). Between different
+ * games, an active café beats a bankrupt one; otherwise this tab's game stays, since the old
+ * build never saw it.
+ */
+export function resolveOldBuildWrite(ours: GameState, theirs: GameState): 'ours' | 'theirs' {
+  if (ours.seed === theirs.seed) return compareProgress(theirs, ours) >= 0 ? 'theirs' : 'ours';
+  if (ours.status !== 'active' && theirs.status === 'active') return 'theirs';
+  return 'ours';
 }
 
 // ---------------------------------------------------------------------------
@@ -335,14 +377,28 @@ function readCopyList(storage: StorageLike): unknown[] {
   }
 }
 
-/** Keep `game` as a restorable copy (an identical copy is replaced, the oldest beyond the limit dropped). */
-export function keepCopy(storage: StorageLike | null, game: GameState, now: Date = new Date()): boolean {
-  if (!storage) return false;
+/** A game nobody has played yet: nothing in it is worth restoring. */
+function isUntouched(g: GameState): boolean {
+  return g.day === 1 && g.phase === 'prep' && g.history.length === 0 && g.dayTransactions.length === 0;
+}
+
+/**
+ * Keep `game` as a restorable copy, newest first. Copies that are only earlier points of it (or of
+ * `current`, the game in play) are dropped first so they never push real progress out; beyond
+ * the limit the oldest go. Returns true when the game's play is restorable from the copies
+ * (added, or already contained in a later copy).
+ */
+export function keepCopy(storage: StorageLike | null, game: GameState, now: Date = new Date(), current?: GameState): boolean {
+  if (!storage || isUntouched(game) || (current && isEarlierStateOf(game, current))) return false;
   try {
-    const text = JSON.stringify(game);
-    const others = readCopyList(storage).filter((e) => !(isObj(e) && JSON.stringify(e.game) === text));
+    const copies = readCopyList(storage).flatMap((item) => {
+      const decoded = decodeSave(JSON.stringify(item));
+      return decoded.ok ? [{ item, game: decoded.save.game }] : [];
+    });
+    if (copies.some((c) => isEarlierStateOf(game, c.game))) return true;
+    const others = copies.filter((c) => !isEarlierStateOf(c.game, game) && !(current && isEarlierStateOf(c.game, current)));
     const envelope: SaveEnvelope = { schemaVersion: SAVE_SCHEMA_VERSION, savedAt: now.toISOString(), game };
-    storage.setItem(COPIES_KEY, JSON.stringify([envelope, ...others].slice(0, MAX_KEPT_COPIES)));
+    storage.setItem(COPIES_KEY, JSON.stringify([envelope, ...others.map((c) => c.item)].slice(0, MAX_KEPT_COPIES)));
     return true;
   } catch {
     return false;
@@ -406,7 +462,7 @@ export function readCopies(storage: StorageLike | null): DecodedSave[] {
   const out: DecodedSave[] = [];
   const add = (save: DecodedSave | null) => {
     if (!save) return;
-    const key = JSON.stringify(save.game);
+    const key = canonical(save.game);
     if (seen.has(key)) return;
     seen.add(key);
     out.push(save);
