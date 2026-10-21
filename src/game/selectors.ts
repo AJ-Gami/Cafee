@@ -1,0 +1,288 @@
+/**
+ * Read-only views over the game state for the UI. Every number the UI shows
+ * (margins, estimates, quotes, capacity) comes from here or the engine.
+ */
+import { LOW_STOCK_RATIO, MAX_PURCHASE_QTY, MAX_STOCK_PER_PRODUCT } from './constants';
+import { EVENTS } from './data/events';
+import { OBJECTIVES } from './data/objectives';
+import { PRODUCTS } from './data/products';
+import { PROMOTION_ORDER, PROMOTIONS, type PromotionDef } from './data/promotions';
+import { UPGRADE_ORDER, UPGRADES, type UpgradeDef } from './data/upgrades';
+import { estimateDemand, modifiersForState, salePrice, type DemandEstimate } from './demand';
+import { averageUnitCost, inventoryValue, projectedFixedCosts, quotePurchase, todaysUnitCost } from './economy';
+import { isEventVisibleInPrep, resolveEvent } from './events';
+import { formatRM, marginPercent } from './money';
+import { currentLevel, isObjectiveComplete } from './objectives';
+import { candidatesForDay, hourlyCapacity, staffSlots } from './staff';
+import type { DayReport, GameState, ProductId, StaffCandidate } from './types';
+import { PRODUCT_IDS } from './types';
+
+/** Demand estimate using only information the player can see (forecast events, not surprises). */
+export function dayEstimate(state: GameState): DemandEstimate {
+  const visibleEvent = isEventVisibleInPrep(state.todayEventId) ? resolveEvent(state.todayEventId, state.upgrades) : null;
+  const mods = modifiersForState(state, visibleEvent);
+  return estimateDemand(state.day, state.reputation, state.products, state.staff, state.upgrades, mods);
+}
+
+export type PricePerception = 'cheap' | 'fair' | 'pricey' | 'too_expensive';
+
+export function pricePerception(productId: ProductId, priceSen: number): PricePerception {
+  const ratio = priceSen / PRODUCTS[productId].referencePriceSen;
+  if (ratio < 0.9) return 'cheap';
+  if (ratio <= 1.1) return 'fair';
+  if (ratio <= 1.3) return 'pricey';
+  return 'too_expensive';
+}
+
+export const PRICE_PERCEPTION_LABEL: Record<PricePerception, string> = {
+  cheap: 'Murah',
+  fair: 'Berpatutan',
+  pricey: 'Mahal',
+  too_expensive: 'Terlalu mahal',
+};
+
+export type StockLevel = 'out' | 'low' | 'ok' | 'off';
+
+export interface ProductView {
+  id: ProductId;
+  name: string;
+  enabled: boolean;
+  priceSen: number;
+  /** Price after today's promotion discount. */
+  salePriceSen: number;
+  /** Supplier cost per unit today (includes event surcharge). */
+  unitCostSen: number;
+  surchargeBps: number;
+  marginSen: number;
+  marginPct: number;
+  perception: PricePerception;
+  stock: number;
+  stockValueSen: number;
+  avgCostSen: number;
+  estimatedDemand: number;
+  stockLevel: StockLevel;
+  suggestedPurchase: number;
+  spoilageRate: number;
+  maxPurchase: number;
+}
+
+export function productViews(state: GameState): ProductView[] {
+  const estimate = dayEstimate(state);
+  const visibleEvent = isEventVisibleInPrep(state.todayEventId) ? resolveEvent(state.todayEventId, state.upgrades) : null;
+  const mods = modifiersForState(state, visibleEvent);
+  return PRODUCT_IDS.map((id) => {
+    const p = state.products[id];
+    const def = PRODUCTS[id];
+    const { unitCostSen, surchargeBps } = todaysUnitCost(state, id);
+    const est = estimate.perProduct[id];
+    let stockLevel: StockLevel = 'ok';
+    if (!p.enabled) stockLevel = 'off';
+    else if (p.stock === 0) stockLevel = 'out';
+    else if (p.stock < est * LOW_STOCK_RATIO || p.stock < est) stockLevel = 'low';
+    // Perishables get a smaller safety buffer.
+    const buffer = def.spoilageRate >= 0.2 ? 1.0 : 1.15;
+    const target = Math.ceil((est * buffer) / 5) * 5;
+    const suggestedPurchase = p.enabled ? Math.max(0, Math.min(target - p.stock, MAX_STOCK_PER_PRODUCT - p.stock)) : 0;
+    const priceSen = p.priceSen;
+    const sp = salePrice(p, mods);
+    return {
+      id,
+      name: def.name,
+      enabled: p.enabled,
+      priceSen,
+      salePriceSen: sp,
+      unitCostSen,
+      surchargeBps,
+      marginSen: sp - unitCostSen,
+      marginPct: marginPercent(sp, unitCostSen),
+      perception: pricePerception(id, sp),
+      stock: p.stock,
+      stockValueSen: p.stockValueSen,
+      avgCostSen: averageUnitCost(p),
+      estimatedDemand: est,
+      stockLevel,
+      suggestedPurchase,
+      spoilageRate: def.spoilageRate,
+      maxPurchase: Math.max(0, Math.min(MAX_PURCHASE_QTY, MAX_STOCK_PER_PRODUCT - p.stock)),
+    };
+  });
+}
+
+export function restockPlan(state: GameState): { items: { productId: ProductId; quantity: number }[]; totalSen: number } {
+  const items = productViews(state)
+    .filter((v) => v.suggestedPurchase > 0)
+    .map((v) => ({ productId: v.id, quantity: Math.min(v.suggestedPurchase, v.maxPurchase) }))
+    .filter((i) => i.quantity > 0);
+  const totalSen = items.reduce((sum, i) => sum + quotePurchase(state, i.productId, i.quantity).totalSen, 0);
+  return { items, totalSen };
+}
+
+export interface CapacityView {
+  perHour: number;
+  perDay: number;
+  staffCount: number;
+  slots: number;
+}
+
+export function capacityView(state: GameState): CapacityView {
+  const perHour = hourlyCapacity(state.staff, state.upgrades);
+  return { perHour, perDay: perHour * 12, staffCount: state.staff.length, slots: staffSlots(state.upgrades) };
+}
+
+export function hiringCandidates(state: GameState): StaffCandidate[] {
+  return candidatesForDay(state.seed, state.day, state.staff);
+}
+
+export interface PromotionView extends PromotionDef {
+  locked: boolean;
+  affordable: boolean;
+  selected: boolean;
+}
+
+export function promotionViews(state: GameState): PromotionView[] {
+  const level = currentLevel(state);
+  return PROMOTION_ORDER.map((id) => {
+    const def = PROMOTIONS[id];
+    return { ...def, locked: level < def.minLevel, affordable: def.costSen <= state.cashSen, selected: state.promotion === id };
+  });
+}
+
+export interface UpgradeView extends UpgradeDef {
+  owned: boolean;
+  locked: boolean;
+  affordable: boolean;
+}
+
+export function upgradeViews(state: GameState): UpgradeView[] {
+  const level = currentLevel(state);
+  return UPGRADE_ORDER.map((id) => {
+    const def = UPGRADES[id];
+    return { ...def, owned: state.upgrades.includes(id), locked: level < def.minLevel, affordable: def.costSen <= state.cashSen };
+  });
+}
+
+export interface ObjectiveView {
+  id: string;
+  title: string;
+  description: string;
+  xp: number;
+  target: number;
+  current: number;
+  unit: 'count' | 'sen' | 'points';
+  complete: boolean;
+}
+
+export function objectiveViews(state: GameState): ObjectiveView[] {
+  return OBJECTIVES.map((o) => {
+    const complete = isObjectiveComplete(state, o.id);
+    const current = complete ? o.target : Math.min(o.target, Math.max(0, o.progress(state)));
+    return { id: o.id, title: o.title, description: o.description, xp: o.xp, target: o.target, current, unit: o.unit, complete };
+  });
+}
+
+export interface VisibleEvent {
+  title: string;
+  description: string;
+  tone: 'good' | 'bad' | 'mixed';
+  mitigationNote: string | null;
+}
+
+/** Today's event as the player is allowed to see it (surprises stay hidden until opening). */
+export function visibleTodayEvent(state: GameState): VisibleEvent | null {
+  if (state.phase === 'prep' && !isEventVisibleInPrep(state.todayEventId)) return null;
+  const resolved = resolveEvent(state.todayEventId, state.upgrades);
+  if (!resolved) return null;
+  return {
+    title: resolved.def.title,
+    description: resolved.def.description,
+    tone: resolved.def.tone,
+    mitigationNote: resolved.mitigationNote,
+  };
+}
+
+export function lastReport(state: GameState): DayReport | null {
+  return state.history[state.history.length - 1] ?? null;
+}
+
+export function reportForDay(state: GameState, day: number): DayReport | null {
+  return state.history.find((r) => r.day === day) ?? null;
+}
+
+export function fixedCostsView(state: GameState) {
+  return projectedFixedCosts(state);
+}
+
+export function currentInventoryValue(state: GameState): number {
+  return inventoryValue(state.products);
+}
+
+/** Sum of today's preparation cash movements by type (for the live ledger). */
+export function todaysSpending(state: GameState): number {
+  return state.dayTransactions.reduce((sum, t) => sum + t.amountSen, 0);
+}
+
+export interface PrepChecklistItem {
+  id: string;
+  label: string;
+  detail: string;
+  status: 'ok' | 'warn' | 'bad';
+}
+
+export function prepChecklist(state: GameState): PrepChecklistItem[] {
+  const views = productViews(state);
+  const enabled = views.filter((v) => v.enabled);
+  const out = enabled.filter((v) => v.stockLevel === 'out');
+  const low = enabled.filter((v) => v.stockLevel === 'low');
+  const cap = capacityView(state);
+  const est = dayEstimate(state);
+  const fixed = projectedFixedCosts(state);
+  const promo = PROMOTIONS[state.promotion];
+  const items: PrepChecklistItem[] = [];
+
+  if (enabled.length === 0) {
+    items.push({ id: 'menu', label: 'Menu kosong', detail: 'Aktifkan sekurang-kurangnya satu produk.', status: 'bad' });
+  } else if (out.length === enabled.length) {
+    items.push({ id: 'stock', label: 'Tiada stok langsung', detail: 'Beli stok sebelum membuka kafe.', status: 'bad' });
+  } else if (out.length > 0 || low.length > 0) {
+    const names = [...out, ...low].map((v) => v.name).join(', ');
+    items.push({ id: 'stock', label: 'Stok mungkin tidak cukup', detail: names, status: out.length > 0 ? 'bad' : 'warn' });
+  } else {
+    items.push({ id: 'stock', label: 'Stok mencukupi', detail: 'Semua produk menu ada stok mengikut anggaran.', status: 'ok' });
+  }
+
+  items.push({
+    id: 'capacity',
+    label: `Kapasiti ${cap.perHour} pesanan/jam`,
+    detail:
+      est.footfall > cap.perDay
+        ? `Anggaran ${est.footfall} pelanggan melebihi kapasiti ${cap.perDay} sehari.`
+        : `Anggaran ${est.footfall} pelanggan, kapasiti ${cap.perDay} sehari.`,
+    status: est.footfall > cap.perDay ? 'warn' : 'ok',
+  });
+
+  items.push({
+    id: 'promo',
+    label: promo.id === 'none' ? 'Tiada promosi' : `Promosi: ${promo.name}`,
+    detail:
+      promo.costSen > state.cashSen
+        ? 'Tunai tidak cukup — promosi akan dibatalkan.'
+        : promo.costSen > 0
+          ? 'Kos dibayar semasa kafe dibuka.'
+          : 'Pilih promosi untuk menarik lebih ramai pelanggan.',
+    status: promo.costSen > state.cashSen ? 'warn' : 'ok',
+  });
+
+  items.push({
+    id: 'costs',
+    label: 'Kos tetap hari ini',
+    detail: `Gaji, sewa & utiliti asas: ${formatRM(fixed.totalSen)} dibayar semasa tutup.`,
+    status: state.cashSen < fixed.totalSen ? 'warn' : 'ok',
+  });
+
+  return items;
+}
+
+export function eventTitle(id: string | null): string | null {
+  if (!id) return null;
+  return id in EVENTS ? EVENTS[id as keyof typeof EVENTS].title : null;
+}
