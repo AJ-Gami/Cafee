@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useGame } from '../../app/GameProvider';
 import { Button } from '../../components/Button';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -15,6 +15,15 @@ export function GameOverDialog() {
   // (e.g. another tab loaded newer progress) it closes instead of wiping the new game.
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const bankrupt = game.status === 'bankrupt';
+
+  // Once the game is no longer bankrupt (a backup was imported, a reset, another tab), forget the
+  // old dismissal so a later bankruptcy — even on the same seed and day — is always announced.
+  useEffect(() => {
+    if (!bankrupt) {
+      setDismissedKey(null);
+      setConfirmKey(null);
+    }
+  }, [bankrupt]);
   // Let the player watch (or skip) the final day's replay before announcing the bankruptcy.
   const replaying = store.justSettledDay !== null;
   const open = bankrupt && !replaying && dismissedKey !== gameKey;

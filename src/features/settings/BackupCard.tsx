@@ -68,8 +68,11 @@ export function BackupCard() {
         </Button>
         <Button
           variant="secondary"
-          onClick={() => fileRef.current?.click()}
-          loading={status.kind === 'reading'}
+          onClick={() => {
+            if (status.kind !== 'reading') fileRef.current?.click();
+          }}
+          // Not disabled while reading, so keyboard focus stays on the button.
+          aria-busy={status.kind === 'reading' || undefined}
           icon={<ArrowUpFromLine className="size-4" aria-hidden="true" />}
         >
           {status.kind === 'reading' ? 'Membaca fail…' : 'Import simpanan'}

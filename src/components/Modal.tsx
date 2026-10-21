@@ -39,7 +39,9 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
     notifyStack();
     document.body.style.overflow = 'hidden';
     const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>('[data-autofocus]') ?? panel?.querySelector<HTMLElement>(FOCUSABLE);
+    const first =
+      panel?.querySelector<HTMLElement>('[data-autofocus]') ??
+      Array.from(panel?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []).find((el) => el.getClientRects().length > 0);
     first?.focus();
 
     const onKey = (e: KeyboardEvent) => {
@@ -50,7 +52,8 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
         return;
       }
       if (e.key !== 'Tab' || !panel) return;
-      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
+      // Only rendered elements can take focus (a display:none file input would break the wrap).
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.getClientRects().length > 0);
       if (items.length === 0) return;
       const firstEl = items[0] as HTMLElement;
       const lastEl = items[items.length - 1] as HTMLElement;

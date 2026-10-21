@@ -1,5 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
+// Let context routing and offline emulation also apply to service-worker requests (Chromium),
+// so the offline test genuinely cuts the worker off from the network.
+process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS ??= '1';
+
 const PORT = 4174;
 
 /**

@@ -10,7 +10,12 @@ test('after the first visit the game keeps working offline, charts included', as
   await restockToForecast(page);
   await openCafeAndSkip(page, 1);
 
+  // Truly offline: the page AND the service worker lose the network.
   await context.setOffline(true);
+  await context.route('**', (route) => route.abort('internetdisconnected'));
+  const failed: string[] = [];
+  page.on('requestfailed', (request) => failed.push(request.url()));
+
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Laporan Hari 1' })).toBeVisible();
 
@@ -24,6 +29,17 @@ test('after the first visit the game keeps working offline, charts included', as
   await page.getByRole('button', { name: 'Mulakan Hari 2' }).click();
   await expect(page.getByRole('heading', { name: 'Persediaan Hari 2' })).toBeVisible();
   expect((await readSave(page))?.game.day).toBe(2);
+  expect(failed).toEqual([]);
+});
+
+test('offline, other pages on the same origin are not answered with the game', async ({ page, context }) => {
+  await gotoApp(page);
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await context.setOffline(true);
+  await context.route('**', (route) => route.abort('internetdisconnected'));
+  await expect(page.goto('/halaman-lain/')).rejects.toThrow();
 });
 
 test('the web app manifest and icons are served for installation', async ({ page, request }) => {
