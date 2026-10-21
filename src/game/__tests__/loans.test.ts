@@ -137,7 +137,28 @@ describe('repaying on schedule', () => {
     const fixed = projectedFixedCosts(tomorrow);
     expect(fixed.loanSen).toBe(21_000);
     expect(fixed.totalSen).toBe(fixed.wagesSen + fixed.rentSen + fixed.utilitiesBaseSen + 21_000);
-    expect(activeLoanView(tomorrow)?.dueToday?.totalSen).toBe(21_000);
+    expect(activeLoanView(tomorrow)).toMatchObject({ nextChargedToday: true, nextInstallment: { totalSen: 21_000 } });
+  });
+
+  it('after a close, describes the next installment and repayment as tomorrow’s', () => {
+    // Closed on the day the loan was taken: tomorrow's repayment is no longer a free cancellation.
+    const closedDay1 = settle(expectOk(takeLoan(newGame(), 'mikro')).state).state;
+    expect(activeLoanView(closedDay1)).toMatchObject({
+      actionTomorrow: true,
+      nextChargedToday: false,
+      nextInstallment: { number: 1 },
+      settlement: { cancellation: false, principalSen: 200_000, interestSen: 1_000, totalSen: 201_000 },
+    });
+    // The quote shown tonight is exactly what repaying costs in tomorrow's preparation.
+    const day2 = nextDay(closedDay1);
+    const repaid = expectOk(repayLoan(day2));
+    expect(day2.cashSen - repaid.state.cashSen).toBe(201_000);
+
+    // Closed on a later day: that day's installment is already paid; the next is tomorrow's.
+    const closedDay2 = settle(day2).state;
+    expect(closedDay2.loan?.paymentsMade).toBe(1);
+    expect(activeLoanView(closedDay2)).toMatchObject({ actionTomorrow: true, nextChargedToday: false, nextInstallment: { number: 2 } });
+    expect(activeLoanView(nextDay(closedDay2))).toMatchObject({ actionTomorrow: false, nextChargedToday: true, nextInstallment: { number: 2 } });
   });
 });
 

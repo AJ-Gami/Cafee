@@ -12,7 +12,7 @@ import { UPGRADE_ORDER, UPGRADES, type UpgradeDef } from './data/upgrades';
 import { estimateDemand, modifiersForState, reputationPoints, salePrice, type DemandEstimate } from './demand';
 import { averageUnitCost, canAfford, inventoryValue, projectedFixedCosts, quotePurchase, todaysUnitCost } from './economy';
 import { isEventVisibleInPrep, resolveEvent } from './events';
-import { installment, installmentDue, offerTotalInterest, remainingPrincipal, settlementQuote, type Installment, type SettlementQuote } from './loans';
+import { installment, offerTotalInterest, remainingPrincipal, settlementQuote, type Installment, type SettlementQuote } from './loans';
 import { formatRM, marginPercent } from './money';
 import { currentLevel, isObjectiveComplete } from './objectives';
 import { candidatesForState, hourlyCapacity, staffSlots } from './staff';
@@ -357,10 +357,13 @@ export interface ActiveLoanView {
   remainingPrincipalSen: number;
   remainingInterestSen: number;
   paymentsLeft: number;
-  /** Installment charged at today's close, or null (e.g. on the day the loan was taken). */
-  dueToday: Installment | null;
-  /** The next installment to be charged, whichever day that is. */
+  /** The next installment to be charged. */
   nextInstallment: Installment;
+  /** The next installment is charged at today's close (false: at tomorrow's close). */
+  nextChargedToday: boolean;
+  /** True while the café is closed: the loan can next be repaid in tomorrow's preparation. */
+  actionTomorrow: boolean;
+  /** What repaying costs at the next chance to repay (now in preparation, otherwise tomorrow). */
   settlement: SettlementQuote;
   canSettle: boolean;
 }
@@ -368,15 +371,18 @@ export interface ActiveLoanView {
 export function activeLoanView(state: GameState): ActiveLoanView | null {
   const loan = state.loan;
   if (!loan) return null;
-  const settlement = settlementQuote(loan, state.day);
+  // Once today is settled, its installment is paid and the next chance to act is tomorrow.
+  const actionTomorrow = state.phase !== 'prep';
+  const settlement = settlementQuote(loan, actionTomorrow ? state.day + 1 : state.day);
   return {
     loan,
     name: LOAN_OFFERS[loan.offerId].name,
     remainingPrincipalSen: remainingPrincipal(loan),
     remainingInterestSen: loan.totalInterestSen - loan.interestPaidSen,
     paymentsLeft: loan.termDays - loan.paymentsMade,
-    dueToday: installmentDue(loan, state.day),
     nextInstallment: installment(loan, loan.paymentsMade + 1),
+    nextChargedToday: !actionTomorrow && state.day > loan.takenDay,
+    actionTomorrow,
     settlement,
     canSettle: settlement.totalSen <= state.cashSen,
   };

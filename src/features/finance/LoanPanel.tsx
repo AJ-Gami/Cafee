@@ -51,8 +51,14 @@ export function LoanPanel() {
             <Row label="Baki faedah (ikut jadual)" value={<Money sen={active.remainingInterestSen} />} />
             <Row label="Ansuran dibayar" value={`${active.loan.paymentsMade}/${active.loan.termDays}`} />
             <Row
-              label={active.dueToday ? 'Ansuran semasa tutup hari ini' : 'Ansuran pertama (esok)'}
-              value={<Money sen={(active.dueToday ?? active.nextInstallment).totalSen} />}
+              label={
+                active.nextChargedToday
+                  ? 'Ansuran semasa tutup hari ini'
+                  : active.loan.paymentsMade === 0
+                    ? 'Ansuran pertama (esok)'
+                    : 'Ansuran seterusnya (esok)'
+              }
+              value={<Money sen={active.nextInstallment.totalSen} />}
             />
           </dl>
           <div className="mt-3 rounded-xl bg-cream-100 p-3 text-sm text-espresso-700">
@@ -60,8 +66,8 @@ export function LoanPanel() {
               <p>Pinjaman diambil hari ini — anda boleh membatalkannya tanpa faedah dengan memulangkan <Money sen={active.settlement.principalSen} />.</p>
             ) : (
               <p>
-                Lunaskan awal: baki pokok <Money sen={active.settlement.principalSen} /> + faedah hari ini <Money sen={active.settlement.interestSen} />.
-                Faedah selebihnya dikecualikan.
+                {active.actionTomorrow ? 'Lunaskan awal esok' : 'Lunaskan awal'}: baki pokok <Money sen={active.settlement.principalSen} /> + faedah
+                satu hari <Money sen={active.settlement.interestSen} />. Faedah selebihnya dikecualikan.
               </p>
             )}
           </div>
@@ -76,7 +82,8 @@ export function LoanPanel() {
               'Tunai tak cukup untuk melunaskan'
             ) : (
               <>
-                {active.settlement.cancellation ? 'Batalkan pinjaman' : 'Lunaskan sekarang'} (<Money sen={active.settlement.totalSen} />)
+                {active.settlement.cancellation ? 'Batalkan pinjaman' : active.actionTomorrow ? 'Lunaskan esok' : 'Lunaskan sekarang'} (
+                <Money sen={active.settlement.totalSen} />)
               </>
             )}
           </Button>

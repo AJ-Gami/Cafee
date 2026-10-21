@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { gotoApp, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, toast } from './helpers';
+import { gotoApp, navButton, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, toast } from './helpers';
 
 test('take a bank loan, pay installments at each close, then settle it early', async ({ page }) => {
   await gotoApp(page, '#/kewangan/pinjaman');
@@ -20,6 +20,12 @@ test('take a bank loan, pay installments at each close, then settle it early', a
   await expect(page.getByText('Pinjaman diterima', { exact: true })).toBeVisible();
   await expect(page.getByText('Semakan laporan: seimbang')).toBeVisible();
 
+  // After the close, the free same-day cancellation is gone: repaying tomorrow costs a day's interest.
+  await gotoApp(page, '#/kewangan/pinjaman');
+  await expect(page.getByText('Ansuran pertama (esok)')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Lunaskan esok \(RM2,010\.00\)/ })).toBeDisabled();
+  await expect(page.getByText(/membatalkannya tanpa faedah/)).toHaveCount(0);
+  await navButton(page, /Operasi/).click();
   await page.getByRole('button', { name: 'Mulakan Hari 2' }).click();
   await openCafeAndSkip(page, 2);
   await expect(page.getByText('Faedah pinjaman', { exact: true })).toBeVisible();

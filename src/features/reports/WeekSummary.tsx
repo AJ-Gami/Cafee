@@ -3,15 +3,23 @@ import { Badge } from '../../components/Badge';
 import { Card, CardTitle, Row } from '../../components/Card';
 import { Money } from '../../components/Money';
 import { percentPoints, weekdayName } from '../../game/demand';
-import type { WeeklySummary } from '../../game/reports';
+import type { WeekCoverage, WeeklySummary } from '../../game/reports';
 
 function signedCount(n: number): string {
   return n > 0 ? `+${n}` : String(n);
 }
 
-export function weekStatusLabel(w: WeeklySummary): string | null {
-  if (w.complete) return null;
-  return w.inProgress ? `Sedang berjalan (${w.daysPlayed}/7 hari)` : `Data separa (${w.daysPlayed}/7 hari)`;
+const COVERAGE_LABEL: Record<Exclude<WeekCoverage, 'complete'>, { short: string; long: string }> = {
+  in_progress: { short: 'Berjalan', long: 'Sedang berjalan' },
+  ended: { short: 'Akhir', long: 'Minggu terakhir' },
+  cut_off: { short: 'Separa', long: 'Data separa' },
+};
+
+/** Badge text for a week that is not complete, or null. */
+export function weekStatusLabel(w: WeeklySummary, form: 'short' | 'long' = 'long'): string | null {
+  if (w.coverage === 'complete') return null;
+  const label = COVERAGE_LABEL[w.coverage];
+  return form === 'short' ? label.short : `${label.long} (${w.daysPlayed}/7 hari)`;
 }
 
 /** Totals for one week of play. `closing` marks the card shown on the report that ends the week. */

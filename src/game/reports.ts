@@ -209,16 +209,22 @@ export interface WeekComparison {
   servedChange: number;
 }
 
+export type WeekCoverage = 'complete' | 'in_progress' | 'ended' | 'cut_off';
+
 export interface WeeklySummary {
   week: number;
   firstDay: number;
   lastDay: number;
   /** Days of this week present in the report history. */
   daysPlayed: number;
-  /** All seven days are present. */
+  /** All seven days are present (same as coverage === 'complete'). */
   complete: boolean;
-  /** The latest week, still being played. (An older incomplete week was cut off by the history limit.) */
-  inProgress: boolean;
+  /**
+   * complete: all seven days are present. in_progress: the latest week, still being played.
+   * ended: the latest week, in which the game ended (bankruptcy). cut_off: older days of the
+   * week were dropped by the history limit.
+   */
+  coverage: WeekCoverage;
   revenueSen: number;
   otherIncomeSen: number;
   cogsSen: number;
@@ -238,7 +244,7 @@ export interface WeeklySummary {
   vsPrevious: WeekComparison | null;
 }
 
-function summarizeWeek(week: number, days: readonly DayReport[], latestDay: number): Omit<WeeklySummary, 'vsPrevious'> {
+function summarizeWeek(week: number, days: readonly DayReport[], latestDay: number, gameActive: boolean): Omit<WeeklySummary, 'vsPrevious'> {
   const first = days[0] as DayReport;
   const last = days[days.length - 1] as DayReport;
   const total = (pick: (r: DayReport) => number): number => sumSen(days.map(pick));
@@ -251,7 +257,14 @@ function summarizeWeek(week: number, days: readonly DayReport[], latestDay: numb
     lastDay: week * DAYS_PER_WEEK,
     daysPlayed: days.length,
     complete: days.length === DAYS_PER_WEEK,
-    inProgress: days.length < DAYS_PER_WEEK && week * DAYS_PER_WEEK > latestDay,
+    coverage:
+      days.length === DAYS_PER_WEEK
+        ? 'complete'
+        : week * DAYS_PER_WEEK > latestDay
+          ? gameActive
+            ? 'in_progress'
+            : 'ended'
+          : 'cut_off',
     revenueSen: total((r) => r.revenueSen),
     otherIncomeSen: total((r) => r.otherIncomeSen),
     cogsSen: total((r) => r.cogsSen),
@@ -269,8 +282,11 @@ function summarizeWeek(week: number, days: readonly DayReport[], latestDay: numb
   };
 }
 
-/** One summary per week present in the history, oldest first. */
-export function weeklySummaries(history: readonly DayReport[]): WeeklySummary[] {
+/**
+ * One summary per week present in the history, oldest first. Pass `gameActive: false` once the
+ * game is over so its last, unfinished week is not described as still being played.
+ */
+export function weeklySummaries(history: readonly DayReport[], gameActive = true): WeeklySummary[] {
   const byWeek = new Map<number, DayReport[]>();
   for (const r of history) {
     const w = weekOfDay(r.day);
@@ -279,7 +295,7 @@ export function weeklySummaries(history: readonly DayReport[]): WeeklySummary[] 
     else byWeek.set(w, [r]);
   }
   const latestDay = history.reduce((max, r) => Math.max(max, r.day), 0);
-  const weeks = [...byWeek.entries()].sort(([a], [b]) => a - b).map(([w, days]) => summarizeWeek(w, days, latestDay));
+  const weeks = [...byWeek.entries()].sort(([a], [b]) => a - b).map(([w, days]) => summarizeWeek(w, days, latestDay, gameActive));
   return weeks.map((cur, i) => {
     const prev = weeks[i - 1];
     const comparable = prev !== undefined && prev.week === cur.week - 1 && prev.complete && cur.complete;

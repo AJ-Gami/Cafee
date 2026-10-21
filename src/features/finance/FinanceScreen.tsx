@@ -269,7 +269,8 @@ function DailyReportList() {
 
 function WeeklyReportList() {
   const { game } = useGame();
-  const weeks = useMemo(() => [...weeklySummaries(game.history)].reverse(), [game.history]);
+  const active = game.status === 'active';
+  const weeks = useMemo(() => [...weeklySummaries(game.history, active)].reverse(), [game.history, active]);
   const [openWeek, setOpenWeek] = useState<number | null>(null);
   const summary = weeks.find((w) => w.week === openWeek) ?? null;
 
@@ -278,7 +279,7 @@ function WeeklyReportList() {
       <p className="px-1 text-sm text-espresso-600">Setiap minggu bermula hari Isnin. Jumlah dikira daripada laporan harian yang disimpan.</p>
       <ul className="space-y-2">
         {weeks.map((w) => {
-          const status = weekStatusLabel(w);
+          const status = weekStatusLabel(w, 'short');
           return (
             <li key={w.week}>
               <button
@@ -295,7 +296,7 @@ function WeeklyReportList() {
                     <span className="font-semibold">
                       Hari {w.firstDay}–{w.lastDay}
                     </span>
-                    {status ? <Badge tone="warn">{w.inProgress ? 'Berjalan' : 'Separa'}</Badge> : null}
+                    {status ? <Badge tone="warn">{status}</Badge> : null}
                   </span>
                   <span className="block text-sm text-espresso-600">
                     Jualan <Money sen={w.revenueSen} /> · {w.served} pelanggan

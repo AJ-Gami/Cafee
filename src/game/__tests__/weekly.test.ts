@@ -15,10 +15,10 @@ describe('weekly summaries', () => {
 
   it('totals each week exactly from its daily reports', () => {
     const weeks = weeklySummaries(reports);
-    expect(weeks.map((w) => [w.week, w.daysPlayed, w.complete, w.inProgress])).toEqual([
-      [1, 7, true, false],
-      [2, 7, true, false],
-      [3, 2, false, true],
+    expect(weeks.map((w) => [w.week, w.daysPlayed, w.complete, w.coverage])).toEqual([
+      [1, 7, true, 'complete'],
+      [2, 7, true, 'complete'],
+      [3, 2, false, 'in_progress'],
     ]);
     for (const w of weeks) {
       const days = reports.filter((r) => weekOfDay(r.day) === w.week);
@@ -50,8 +50,12 @@ describe('weekly summaries', () => {
 
   it('marks a week cut off by the history limit as partial, not in progress', () => {
     const weeks = weeklySummaries(reports.slice(4)); // oldest kept report is day 5
-    expect(weeks[0]).toMatchObject({ week: 1, daysPlayed: 3, complete: false, inProgress: false, firstDay: 1, lastDay: 7 });
+    expect(weeks[0]).toMatchObject({ week: 1, daysPlayed: 3, complete: false, coverage: 'cut_off', firstDay: 1, lastDay: 7 });
     expect(weeks[1]?.vsPrevious).toBeNull();
+  });
+
+  it('does not describe the last week of an ended game as still being played', () => {
+    expect(weeklySummaries(reports, false).map((w) => w.coverage)).toEqual(['complete', 'complete', 'ended']);
   });
 
   it('finds the week that ends on a given day', () => {
