@@ -71,7 +71,8 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Bank loans (3):** RM2,000 / RM5,000 / RM12,000 over 10 / 20 / 30 days at 5% / 8% / 12% flat interest, gated by café level, one at a time. Installments are exact to the sen (the last one absorbs rounding). Early settlement, a dashboard debt hint and the day's installment in the fixed-cost forecast.
 - **Objectives (15) and levels (4).** Savings objectives count cash net of loan principal, so borrowed money never completes them.
 - **Reports:** a reconciled P&L, cash flow, an inventory bridge, a debt bridge, 12 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
-- **Finance:** revenue vs net-profit chart, cash chart, table view, expense breakdown, report history, a transaction ledger and loans.
+- **Weekly summaries:** every 7th day's report (Sunday) opens with a summary of the week (revenue, net profit, customers, profitable days, best day, service rate, cash and reputation movement) compared with the previous week. *Kewangan → Laporan → Mingguan* lists every week, marking the week still being played and any week cut short by the history limit; comparisons are only made between two complete weeks.
+- **Finance:** revenue vs net-profit chart, cash chart, table view, expense breakdown, daily and weekly report history, a transaction ledger and loans.
 - **Persistence:** a versioned save with autosave after every action, validation, migration, corrupt-save backup and recovery, and confirmed reset (also when restarting after bankruptcy).
 - **Offline & install:** a web app manifest and a build-generated service worker precache every built file (including the lazy charts chunk), so after the first visit the game installs to the home screen and plays fully offline. Pages are fetched network-first so updates arrive whenever online. The worker only handles the game's own shell and files, keeps its caches separate per deployment (so several copies can share an origin), precaches with `cache: 'reload'` so the shell always matches its chunks, and gets a new version whenever any precached file changes.
 - **Backup & device transfer:** Settings can export the save as a JSON file and import one back (validated and migrated exactly like a stored save, with a confirmation before replacing the current game).
@@ -113,7 +114,7 @@ src/
     engine.ts              player actions + once-per-day settlement
     reducer.ts             pure reducer mapping UI actions to the engine
     selectors.ts           read-only views for the UI (estimates, quotes, margins, checklists)
-    reports.ts             reconciliation, cash-flow summary, chart series
+    reports.ts             reconciliation, cash-flow summary, chart series, weekly summaries
     validate.ts            runtime validation of loaded saves
     save.ts                versioned save manager and migrations
     __tests__/             Vitest suites
@@ -157,7 +158,7 @@ src/
 npm test
 ```
 
-There are 113 tests in 8 suites (`src/game/__tests__`):
+There are 118 tests in 9 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -167,6 +168,7 @@ There are 113 tests in 8 suites (`src/game/__tests__`):
 | `events.test.ts` | reproducible rolls, hidden surprises, surprise effects starting at the event hour, effects of rain/festival/heatwave/power outage/breakdown/inspection (+mitigation)/contest/office order/reviewer/price spike |
 | `save.test.ts` | save/load round trips, export/import (round trip, file naming, invalid and oversized files, v1 import), save ids and other-tab write detection, malformed JSON, invalid values, future versions, throwing/unavailable storage, v1 migration, reset |
 | `loans.test.ts` | exact installment schedules, taking a loan (financing, level lock, one at a time, phase lock), installments at each close until repaid, charges when cash is short, fixed-cost forecast, free same-day cancellation, early settlement, borrowed cash excluded from savings objectives, v2→v3 migration, loan validation |
+| `weekly.test.ts` | week numbering, weekly totals equal their daily reports, comparisons only between complete weeks, partial (history-limited) vs in-progress weeks, the week ending on a day |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
 | `selectors.test.ts` | stock levels, restock plan, forecast never leaks surprises, price preview, hire capacity gain with upgrades, reputation display, chart series, compact labels |
 
@@ -186,6 +188,7 @@ npm run test:e2e
 | `offline.spec.ts` | after the first visit, with the network cut for both the page and the service worker, the game reloads and keeps playing (charts included); other pages on the origin are not answered with the game; manifest and icons are served |
 | `backup.spec.ts` | export downloads the save; import restores it after a reset; an invalid file is rejected without changes; restoring and going bankrupt again on the same day shows the game-over dialog; keyboard focus stays inside the settings sheet |
 | `loans.spec.ts` | take a loan, installments in reconciled reports, early settlement and its objective; a v2 save migrates on load |
+| `weekly.spec.ts` | seven days played through the UI; the day-7 report shows the week summary; the weekly list and its summary sheet |
 | `multi-tab-and-dialogs.spec.ts` | second tab follows the first, stale-tab action and manual save never overwrite newer progress, toasts never cover dialog buttons or the sheet's close button, Escape closes only the top dialog |
 
 CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e suite on every push and pull request.
@@ -216,7 +219,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 ## Recommended next steps
 
 1. Add a second-branch expansion, ingredient-level inventory (beans, milk, tea, pastry) and simple depreciation.
-2. Add a weekly summary report and goals for weekends and holidays.
+2. Add goals for weekends and holidays, and a shareable weekly result card.
 3. Support localisation (English) through a string table.
 
 ### Note on dependency pinning

@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Money } from '../../components/Money';
 import { Notice } from '../../components/Notice';
 import { weekdayName } from '../../game/demand';
+import { weekEndingOn } from '../../game/reports';
 import { capacityView, dayEstimate, fixedCostsView, lastReport, prepChecklist, visibleTodayEvent } from '../../game/selectors';
 import { DayReportView } from '../reports/DayReportView';
 import { DayPlayback } from './DayPlayback';
@@ -212,7 +213,7 @@ function ClosedView() {
   return (
     <div className="space-y-4">
       <ScreenTitle title={`Laporan Hari ${report.day}`} subtitle="Semak prestasi sebelum memulakan hari baharu." />
-      <DayReportView report={report} />
+      <DayReportView report={report} week={weekEndingOn(game.history, report.day)} />
       {game.status === 'active' ? (
         <div className="sticky bottom-[calc(80px+env(safe-area-inset-bottom,0px))] z-10 -mx-1 rounded-3xl bg-cream-100/90 p-1 backdrop-blur">
           <Button size="lg" block onClick={nextDay} loading={advancing} icon={<Sunrise className="size-5" aria-hidden="true" />}>

@@ -13,9 +13,10 @@ import { Stat } from '../../components/Stat';
 import { HISTORY_LIMIT } from '../../game/constants';
 import { weekdayName } from '../../game/demand';
 import { remainingPrincipal } from '../../game/loans';
-import { historySeries } from '../../game/reports';
+import { historySeries, weekEndingOn, weeklySummaries } from '../../game/reports';
 import { currentInventoryValue, lastReport, reportForDay } from '../../game/selectors';
 import { DayReportView, TransactionList } from '../reports/DayReportView';
+import { WeekSummaryCard, weekStatusLabel } from '../reports/WeekSummary';
 import { CashChart, RevenueProfitChart } from './LazyCharts';
 import { LoanPanel } from './LoanPanel';
 
@@ -181,14 +182,14 @@ function ExpenseBars({ report }: { report: NonNullable<ReturnType<typeof lastRep
   );
 }
 
+type ReportKind = 'harian' | 'mingguan';
+
 function ReportsPanel() {
   const { game } = useGame();
   const { go } = useNav();
-  const [openDay, setOpenDay] = useState<number | null>(null);
-  const report = openDay !== null ? reportForDay(game, openDay) : null;
-  const reports = [...game.history].reverse();
+  const [kind, setKind] = useState<ReportKind>('harian');
 
-  if (reports.length === 0) {
+  if (game.history.length === 0) {
     return (
       <EmptyState
         icon={<Receipt className="size-6" />}
@@ -203,6 +204,29 @@ function ReportsPanel() {
       </EmptyState>
     );
   }
+
+  return (
+    <div className="space-y-3">
+      <Segmented<ReportKind>
+        id="laporan-jenis"
+        label="Jenis laporan"
+        value={kind}
+        onChange={setKind}
+        options={[
+          { id: 'harian', label: 'Harian' },
+          { id: 'mingguan', label: 'Mingguan' },
+        ]}
+      />
+      <div {...tabPanelProps('laporan-jenis', kind)}>{kind === 'harian' ? <DailyReportList /> : <WeeklyReportList />}</div>
+    </div>
+  );
+}
+
+function DailyReportList() {
+  const { game } = useGame();
+  const [openDay, setOpenDay] = useState<number | null>(null);
+  const report = openDay !== null ? reportForDay(game, openDay) : null;
+  const reports = [...game.history].reverse();
 
   return (
     <div className="space-y-2">
@@ -237,7 +261,57 @@ function ReportsPanel() {
         ))}
       </ul>
       <Sheet open={report !== null} onClose={() => setOpenDay(null)} title={report ? `Laporan Hari ${report.day}` : 'Laporan'}>
-        {report ? <DayReportView report={report} /> : null}
+        {report ? <DayReportView report={report} week={weekEndingOn(game.history, report.day)} /> : null}
+      </Sheet>
+    </div>
+  );
+}
+
+function WeeklyReportList() {
+  const { game } = useGame();
+  const weeks = useMemo(() => [...weeklySummaries(game.history)].reverse(), [game.history]);
+  const [openWeek, setOpenWeek] = useState<number | null>(null);
+  const summary = weeks.find((w) => w.week === openWeek) ?? null;
+
+  return (
+    <div className="space-y-2">
+      <p className="px-1 text-sm text-espresso-600">Setiap minggu bermula hari Isnin. Jumlah dikira daripada laporan harian yang disimpan.</p>
+      <ul className="space-y-2">
+        {weeks.map((w) => {
+          const status = weekStatusLabel(w);
+          return (
+            <li key={w.week}>
+              <button
+                type="button"
+                onClick={() => setOpenWeek(w.week)}
+                className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-espresso-800/[0.07] bg-cream-50 p-3 text-left shadow-card hover:bg-cream-100"
+              >
+                <span className="inline-flex size-11 shrink-0 flex-col items-center justify-center rounded-xl bg-cream-200 leading-none">
+                  <span className="text-[10px] font-semibold uppercase text-espresso-600">Mgg</span>
+                  <span className="font-semibold">{w.week}</span>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-x-2">
+                    <span className="font-semibold">
+                      Hari {w.firstDay}–{w.lastDay}
+                    </span>
+                    {status ? <Badge tone="warn">{w.inProgress ? 'Berjalan' : 'Separa'}</Badge> : null}
+                  </span>
+                  <span className="block text-sm text-espresso-600">
+                    Jualan <Money sen={w.revenueSen} /> · {w.served} pelanggan
+                  </span>
+                </span>
+                <span className="text-right">
+                  <Money sen={w.netProfitSen} colored signed className="font-semibold" />
+                </span>
+                <ChevronRight className="size-4 shrink-0 text-espresso-500" aria-hidden="true" />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <Sheet open={summary !== null} onClose={() => setOpenWeek(null)} title={summary ? `Ringkasan Minggu ${summary.week}` : 'Ringkasan mingguan'}>
+        {summary ? <WeekSummaryCard summary={summary} /> : null}
       </Sheet>
     </div>
   );

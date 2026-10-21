@@ -10,9 +10,10 @@ import { PRODUCTS } from '../../game/data/products';
 import { PROMOTIONS } from '../../game/data/promotions';
 import { formatHour, percentPoints } from '../../game/demand';
 import { objectiveDef } from '../../game/objectives';
-import { cashFlowSummary, reconcileReport } from '../../game/reports';
+import { cashFlowSummary, reconcileReport, type WeeklySummary } from '../../game/reports';
 import type { DayReport, TimelineTone, TransactionType } from '../../game/types';
 import { ResultCard } from './ResultCard';
+import { WeekSummaryCard } from './WeekSummary';
 
 export const TX_LABEL: Record<TransactionType, { label: string; tone: Tone }> = {
   stock_purchase: { label: 'Stok', tone: 'neutral' },
@@ -68,7 +69,8 @@ export function TransactionList({ transactions }: { transactions: DayReport['tra
   );
 }
 
-export function DayReportView({ report }: { report: DayReport }) {
+/** `week` is the summary of the week this day completes (shown on every 7th day's report). */
+export function DayReportView({ report, week = null }: { report: DayReport; week?: WeeklySummary | null }) {
   const e = report.expenses;
   const cash = cashFlowSummary(report);
   const rec = reconcileReport(report);
@@ -78,6 +80,8 @@ export function DayReportView({ report }: { report: DayReport }) {
   return (
     <div className="space-y-4">
       <ResultCard report={report} />
+
+      {week ? <WeekSummaryCard summary={week} closing /> : null}
 
       {report.eventId ? (
         <Card>

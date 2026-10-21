@@ -187,3 +187,117 @@ export function cumulativeByHour(report: DayReport): { hour: number; served: num
     return { hour: h.hour, served, revenueSen, lost };
   });
 }
+
+// ---------------------------------------------------------------------------
+// Weekly summaries (week 1 = days 1–7, Monday to Sunday)
+// ---------------------------------------------------------------------------
+
+export const DAYS_PER_WEEK = 7;
+
+export function weekOfDay(day: number): number {
+  return Math.ceil(day / DAYS_PER_WEEK);
+}
+
+export function isWeekEnd(day: number): boolean {
+  return day % DAYS_PER_WEEK === 0;
+}
+
+export interface WeekComparison {
+  /** Revenue change in whole percent, or null when last week had no revenue. */
+  revenueChangePct: number | null;
+  netProfitChangeSen: number;
+  servedChange: number;
+}
+
+export interface WeeklySummary {
+  week: number;
+  firstDay: number;
+  lastDay: number;
+  /** Days of this week present in the report history. */
+  daysPlayed: number;
+  /** All seven days are present. */
+  complete: boolean;
+  /** The latest week, still being played. (An older incomplete week was cut off by the history limit.) */
+  inProgress: boolean;
+  revenueSen: number;
+  otherIncomeSen: number;
+  cogsSen: number;
+  totalExpensesSen: number;
+  netProfitSen: number;
+  openingCashSen: number;
+  closingCashSen: number;
+  served: number;
+  arrivals: number;
+  /** Served / customers willing to buy, over the whole week. 0..1 */
+  serviceRate: number;
+  profitableDays: number;
+  bestDay: { day: number; revenueSen: number };
+  reputationStart: number;
+  reputationEnd: number;
+  /** Against the previous week, only when both weeks are complete. */
+  vsPrevious: WeekComparison | null;
+}
+
+function summarizeWeek(week: number, days: readonly DayReport[], latestDay: number): Omit<WeeklySummary, 'vsPrevious'> {
+  const first = days[0] as DayReport;
+  const last = days[days.length - 1] as DayReport;
+  const total = (pick: (r: DayReport) => number): number => sumSen(days.map(pick));
+  const served = days.reduce((n, r) => n + r.customers.served, 0);
+  const willing = days.reduce((n, r) => n + r.customers.served + r.customers.lostCapacity + r.customers.lostStock + r.customers.lostClosed, 0);
+  const best = days.reduce((a, b) => (b.revenueSen > a.revenueSen ? b : a));
+  return {
+    week,
+    firstDay: (week - 1) * DAYS_PER_WEEK + 1,
+    lastDay: week * DAYS_PER_WEEK,
+    daysPlayed: days.length,
+    complete: days.length === DAYS_PER_WEEK,
+    inProgress: days.length < DAYS_PER_WEEK && week * DAYS_PER_WEEK > latestDay,
+    revenueSen: total((r) => r.revenueSen),
+    otherIncomeSen: total((r) => r.otherIncomeSen),
+    cogsSen: total((r) => r.cogsSen),
+    totalExpensesSen: total((r) => r.totalExpensesSen),
+    netProfitSen: total((r) => r.netProfitSen),
+    openingCashSen: first.openingCashSen,
+    closingCashSen: last.closingCashSen,
+    served,
+    arrivals: days.reduce((n, r) => n + r.customers.arrivals, 0),
+    serviceRate: willing === 0 ? 1 : served / willing,
+    profitableDays: days.filter((r) => r.netProfitSen > 0).length,
+    bestDay: { day: best.day, revenueSen: best.revenueSen },
+    reputationStart: first.reputationBefore,
+    reputationEnd: last.reputationAfter,
+  };
+}
+
+/** One summary per week present in the history, oldest first. */
+export function weeklySummaries(history: readonly DayReport[]): WeeklySummary[] {
+  const byWeek = new Map<number, DayReport[]>();
+  for (const r of history) {
+    const w = weekOfDay(r.day);
+    const list = byWeek.get(w);
+    if (list) list.push(r);
+    else byWeek.set(w, [r]);
+  }
+  const latestDay = history.reduce((max, r) => Math.max(max, r.day), 0);
+  const weeks = [...byWeek.entries()].sort(([a], [b]) => a - b).map(([w, days]) => summarizeWeek(w, days, latestDay));
+  return weeks.map((cur, i) => {
+    const prev = weeks[i - 1];
+    const comparable = prev !== undefined && prev.week === cur.week - 1 && prev.complete && cur.complete;
+    return {
+      ...cur,
+      vsPrevious: comparable
+        ? {
+            revenueChangePct: prev.revenueSen > 0 ? Math.round(((cur.revenueSen - prev.revenueSen) * 100) / prev.revenueSen) : null,
+            netProfitChangeSen: cur.netProfitSen - prev.netProfitSen,
+            servedChange: cur.served - prev.served,
+          }
+        : null,
+    };
+  });
+}
+
+/** The summary of the week that ends on `day` (every 7th day), if that day is in the history. */
+export function weekEndingOn(history: readonly DayReport[], day: number): WeeklySummary | null {
+  if (!isWeekEnd(day) || !history.some((r) => r.day === day)) return null;
+  return weeklySummaries(history).find((w) => w.lastDay === day) ?? null;
+}
