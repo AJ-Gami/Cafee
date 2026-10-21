@@ -2,7 +2,7 @@ import { useGame } from '../../app/GameProvider';
 import { useNav } from '../../app/navigation';
 import { ScreenTitle } from '../../components/Card';
 import { Notice } from '../../components/Notice';
-import { Segmented } from '../../components/Segmented';
+import { Segmented, tabPanelProps } from '../../components/Segmented';
 import { ObjectivesPanel } from './ObjectivesPanel';
 import { StaffPanel } from './StaffPanel';
 import { UpgradesPanel } from './UpgradesPanel';
@@ -18,6 +18,7 @@ export function BusinessScreen() {
     <div className="space-y-4">
       <ScreenTitle title="Urus perniagaan" subtitle="Staf, naik taraf dan objektif kafe anda." />
       <Segmented<BusinessTab>
+        id="urus-tabs"
         label="Bahagian pengurusan"
         value={tab}
         onChange={setSub}
@@ -32,7 +33,7 @@ export function BusinessScreen() {
           Pengambilan staf dan pembelian naik taraf dibuka semula apabila hari seterusnya bermula.
         </Notice>
       ) : null}
-      <div role="tabpanel">
+      <div {...tabPanelProps('urus-tabs', tab)}>
         {tab === 'staf' && <StaffPanel locked={locked} />}
         {tab === 'naik-taraf' && <UpgradesPanel locked={locked} />}
         {tab === 'objektif' && <ObjectivesPanel />}

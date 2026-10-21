@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { EmptyState } from '../../components/EmptyState';
 import { Money } from '../../components/Money';
 import { STAFF_ROLES } from '../../game/data/staff';
-import { capacityView, dayEstimate, fixedCostsView, hiringCandidates } from '../../game/selectors';
+import { capacityAfterHire, capacityView, dayEstimate, fixedCostsView, hiringCandidates } from '../../game/selectors';
 import type { StaffCandidate, StaffMember } from '../../game/types';
 
 function Avatar({ name, role }: { name: string; role: StaffMember['role'] }) {
@@ -39,6 +39,7 @@ export function StaffPanel({ locked }: { locked: boolean }) {
   const [hireTarget, setHireTarget] = useState<StaffCandidate | null>(null);
   const [fireTarget, setFireTarget] = useState<StaffMember | null>(null);
   const full = cap.staffCount >= cap.slots;
+  const canExpand = !game.upgrades.includes('second_counter');
   const baristas = game.staff.filter((s) => s.role === 'barista').length;
 
   return (
@@ -105,7 +106,7 @@ export function StaffPanel({ locked }: { locked: boolean }) {
           subtitle="Calon baharu muncul setiap hari. Gaji dibayar setiap hari semasa tutup."
           icon={<UserPlus className="size-5" />}
         />
-        {full ? (
+        {full && canExpand ? (
           <EmptyState
             icon={<Users className="size-6" />}
             title="Had staf dicapai"
@@ -116,6 +117,10 @@ export function StaffPanel({ locked }: { locked: boolean }) {
             }
           >
             Kafe anda hanya muat {cap.slots} orang staf. Naik taraf kaunter untuk menambah ruang.
+          </EmptyState>
+        ) : full ? (
+          <EmptyState icon={<Users className="size-6" />} title="Pasukan sudah penuh">
+            Kafe anda sudah mencapai had maksimum {cap.slots} orang staf. Berhentikan seorang staf jika mahu mengambil calon baharu.
           </EmptyState>
         ) : candidates.length === 0 ? (
           <EmptyState icon={<Users className="size-6" />} title="Tiada calon hari ini">
@@ -168,7 +173,7 @@ export function StaffPanel({ locked }: { locked: boolean }) {
         {hireTarget ? (
           <p>
             Kos pengambilan <Money sen={hireTarget.hireFeeSen} /> dibayar sekarang. Gaji <Money sen={hireTarget.wageSen} /> sehari akan dibayar setiap kali kafe
-            ditutup. Kapasiti bertambah {hireTarget.ordersPerHour} pesanan sejam.
+            ditutup. Kapasiti kafe bertambah daripada {capacityAfterHire(game, hireTarget).before} kepada {capacityAfterHire(game, hireTarget).after} pesanan sejam.
           </p>
         ) : null}
       </ConfirmDialog>

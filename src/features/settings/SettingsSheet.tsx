@@ -12,7 +12,7 @@ function formatSavedAt(iso: string | null): string {
   if (!iso) return 'belum disimpan';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'tidak diketahui';
-  return d.toLocaleString('ms-MY', { dateStyle: 'medium', timeStyle: 'short' });
+  return d.toLocaleString('ms-MY', { dateStyle: 'medium', timeStyle: 'medium' });
 }
 
 export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -21,8 +21,14 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
   const [name, setName] = useState(game.cafeName);
   const [confirmReset, setConfirmReset] = useState(false);
 
+  const [savedFlash, setSavedFlash] = useState(false);
+
   useEffect(() => {
     if (open) setName(game.cafeName);
+    if (!open) {
+      setConfirmReset(false);
+      setSavedFlash(false);
+    }
   }, [open, game.cafeName]);
 
   return (
@@ -81,9 +87,20 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             <p className="mt-2">Permainan ini tidak mengumpul maklumat peribadi dan tiada pembayaran. Format simpanan: versi {SAVE_SCHEMA_VERSION}.</p>
           </div>
           <div className="mt-3 grid grid-cols-1 gap-2">
-            <Button variant="secondary" disabled={!storageAvailable} onClick={saveNow} icon={<Save className="size-4" aria-hidden="true" />}>
+            <Button
+              variant="secondary"
+              disabled={!storageAvailable}
+              onClick={() => {
+                saveNow();
+                setSavedFlash(true);
+              }}
+              icon={<Save className="size-4" aria-hidden="true" />}
+            >
               Simpan sekarang
             </Button>
+            <p aria-live="polite" className="min-h-5 text-center text-sm font-semibold text-sage-700">
+              {savedFlash && saveInfo.status === 'saved' ? 'Disimpan dalam pelayar ini.' : ''}
+            </p>
             <Button variant="danger" onClick={() => setConfirmReset(true)} icon={<RotateCcw className="size-4" aria-hidden="true" />}>
               Set semula permainan
             </Button>

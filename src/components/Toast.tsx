@@ -16,7 +16,7 @@ export function Toast() {
   }, [feedback, dispatch]);
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[calc(72px+env(safe-area-inset-top,0px))] z-30 flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-x-0 top-[calc(72px+env(safe-area-inset-top,0px))] z-[60] flex justify-center px-4">
       <div aria-live="polite" role="status" className="w-full max-w-md">
         {feedback ? (
           <button

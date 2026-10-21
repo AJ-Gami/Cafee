@@ -64,6 +64,14 @@ describe('game reducer', () => {
     expect(reset.game.seed).toBe(5);
   });
 
+  it('marks the day replay as watched so it does not restart', () => {
+    let store = gameReducer(initStore(stockAll(newGame())), { type: 'OPEN_CAFE', day: 1 });
+    expect(store.justSettledDay).toBe(1);
+    store = gameReducer(store, { type: 'PLAYBACK_DONE' });
+    expect(store.justSettledDay).toBeNull();
+    expect(gameReducer(store, { type: 'PLAYBACK_DONE' })).toBe(store);
+  });
+
   it('dismisses only the matching feedback', () => {
     const store = gameReducer(initStore(newGame()), { type: 'PURCHASE', productId: 'latte', quantity: 1 });
     const id = store.feedback?.id ?? -1;

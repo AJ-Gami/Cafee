@@ -9,7 +9,7 @@ import { PRODUCTS } from './data/products';
 import { PROMOTION_ORDER, PROMOTIONS, type PromotionDef } from './data/promotions';
 import { UPGRADE_ORDER, UPGRADES, type UpgradeDef } from './data/upgrades';
 import { estimateDemand, modifiersForState, salePrice, type DemandEstimate } from './demand';
-import { averageUnitCost, inventoryValue, projectedFixedCosts, quotePurchase, todaysUnitCost } from './economy';
+import { averageUnitCost, canAfford, inventoryValue, projectedFixedCosts, quotePurchase, todaysUnitCost } from './economy';
 import { isEventVisibleInPrep, resolveEvent } from './events';
 import { formatRM, marginPercent } from './money';
 import { currentLevel, isObjectiveComplete } from './objectives';
@@ -129,6 +129,14 @@ export function capacityView(state: GameState): CapacityView {
   return { perHour, perDay: perHour * 12, staffCount: state.staff.length, slots: staffSlots(state.upgrades) };
 }
 
+/** Orders per hour before and after hiring a candidate, including upgrade multipliers. */
+export function capacityAfterHire(state: GameState, candidate: StaffCandidate): { before: number; after: number; gain: number } {
+  const before = hourlyCapacity(state.staff, state.upgrades);
+  const { hireFeeSen: _fee, ...member } = candidate;
+  const after = hourlyCapacity([...state.staff, member], state.upgrades);
+  return { before, after, gain: after - before };
+}
+
 export function hiringCandidates(state: GameState): StaffCandidate[] {
   return candidatesForDay(state.seed, state.day, state.staff);
 }
@@ -143,7 +151,7 @@ export function promotionViews(state: GameState): PromotionView[] {
   const level = currentLevel(state);
   return PROMOTION_ORDER.map((id) => {
     const def = PROMOTIONS[id];
-    return { ...def, locked: level < def.minLevel, affordable: def.costSen <= state.cashSen, selected: state.promotion === id };
+    return { ...def, locked: level < def.minLevel, affordable: canAfford(def.costSen, state.cashSen), selected: state.promotion === id };
   });
 }
 
@@ -264,12 +272,12 @@ export function prepChecklist(state: GameState): PrepChecklistItem[] {
     id: 'promo',
     label: promo.id === 'none' ? 'Tiada promosi' : `Promosi: ${promo.name}`,
     detail:
-      promo.costSen > state.cashSen
+      !canAfford(promo.costSen, state.cashSen)
         ? 'Tunai tidak cukup — promosi akan dibatalkan.'
         : promo.costSen > 0
           ? 'Kos dibayar semasa kafe dibuka.'
           : 'Pilih promosi untuk menarik lebih ramai pelanggan.',
-    status: promo.costSen > state.cashSen ? 'warn' : 'ok',
+    status: canAfford(promo.costSen, state.cashSen) ? 'ok' : 'warn',
   });
 
   items.push({

@@ -53,11 +53,11 @@ export function TransactionList({ transactions }: { transactions: DayReport['tra
   return (
     <ul className="divide-y divide-espresso-800/[0.07]">
       {transactions.map((t) => (
-        <li key={t.id} className="flex items-center gap-3 py-2">
-          <Badge tone={TX_LABEL[t.type].tone} className="w-24 justify-center">
+        <li key={t.id} className="flex items-start gap-3 py-2">
+          <Badge tone={TX_LABEL[t.type].tone} className="mt-0.5 w-24 shrink-0 justify-center">
             {TX_LABEL[t.type].label}
           </Badge>
-          <span className="min-w-0 flex-1 truncate text-sm text-espresso-700">{t.label}</span>
+          <span className="min-w-0 flex-1 break-words text-sm text-espresso-700">{t.label}</span>
           <Money sen={t.amountSen} signed colored className="text-sm font-semibold" />
         </li>
       ))}

@@ -1,5 +1,5 @@
 import { EVENTS } from '../../game/data/events';
-import { weekdayName } from '../../game/demand';
+import { reputationPoints, weekdayName } from '../../game/demand';
 import { formatRM } from '../../game/money';
 import type { DayReport } from '../../game/types';
 
@@ -86,7 +86,7 @@ export async function renderShareImage(report: DayReport): Promise<Blob> {
     ['Hasil jualan', formatRM(report.revenueSen)],
     ['Pelanggan dilayan', String(report.customers.served)],
     ['Kadar servis', `${Math.round(report.customers.serviceRate * 100)}%`],
-    ['Reputasi', `${Math.round(report.reputationAfter)}/100`],
+    ['Reputasi', `${reputationPoints(report.reputationAfter)}/100`],
   ];
   metrics.forEach(([label, value], i) => {
     const col = i % 2;

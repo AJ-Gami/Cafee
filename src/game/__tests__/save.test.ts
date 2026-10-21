@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SAVE_SCHEMA_VERSION, STARTING_CASH_SEN } from '../constants';
 import { createNewGame, startNextDay } from '../engine';
-import { BACKUP_KEY, clearSave, createMemoryStorage, loadGame, migrateSave, SAVE_KEY, saveGame, type StorageLike } from '../save';
+import { BACKUP_KEY, clearSave, createMemoryStorage, loadGame, migrateSave, peekSaveId, SAVE_KEY, saveGame, type StorageLike } from '../save';
 import { validateGameState } from '../validate';
 import { expectOk, newGame, playDays, settle, stockAll } from './helpers';
 
@@ -39,6 +39,50 @@ describe('save/load round trip', () => {
     expect(raw.schemaVersion).toBe(SAVE_SCHEMA_VERSION);
     expect(typeof raw.savedAt).toBe('string');
     expect(raw.game.cashSen).toBe(STARTING_CASH_SEN);
+  });
+});
+
+describe('save ids for multi-tab safety', () => {
+  it('stamps every write with a fresh id that can be read without parsing the game', () => {
+    const storage = createMemoryStorage();
+    const { state } = playDays(newGame(), 4);
+    const first = saveGame(storage, state);
+    const second = saveGame(storage, state);
+    if (!first.ok || !second.ok) throw new Error('save failed');
+    expect(first.saveId).not.toBe(second.saveId);
+    expect(peekSaveId(storage)).toBe(second.saveId);
+    const loaded = loadGame(storage);
+    expect(loaded.status === 'loaded' && loaded.saveId).toBe(second.saveId);
+  });
+
+  it('reports a missing save, a legacy save without id, and unreadable storage distinctly', () => {
+    expect(peekSaveId(createMemoryStorage())).toBeNull();
+    const legacy = createMemoryStorage({
+      [SAVE_KEY]: JSON.stringify({ schemaVersion: SAVE_SCHEMA_VERSION, savedAt: 'x', game: newGame() }),
+    });
+    expect(peekSaveId(legacy)).toBeNull();
+    const loaded = loadGame(legacy);
+    expect(loaded.status === 'loaded' && loaded.saveId).toBeNull();
+    expect(peekSaveId(null)).toBeUndefined();
+    const throwing: StorageLike = {
+      getItem: () => {
+        throw new Error('SecurityError');
+      },
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    };
+    expect(peekSaveId(throwing)).toBeUndefined();
+  });
+
+  it('detects a write by another tab', () => {
+    const storage = createMemoryStorage();
+    const mine = saveGame(storage, newGame());
+    if (!mine.ok) throw new Error('save failed');
+    // Another tab advances and saves.
+    const other = saveGame(storage, playDays(newGame(), 1).state);
+    if (!other.ok) throw new Error('save failed');
+    expect(peekSaveId(storage)).not.toBe(mine.saveId);
+    expect(peekSaveId(storage)).toBe(other.saveId);
   });
 });
 

@@ -22,7 +22,7 @@ export function Stat({
         {icon}
         <span className="truncate">{label}</span>
       </div>
-      <div className={`mt-1 truncate font-semibold text-espresso-800 ${emphasis ? 'text-[26px] leading-8' : 'text-xl leading-7'}`}>
+      <div className={`mt-1 break-words font-semibold text-espresso-800 ${emphasis ? 'text-[26px] leading-8' : 'text-lg leading-7 min-[400px]:text-xl'}`}>
         {value}
       </div>
       {hint ? <div className="mt-0.5 truncate text-xs text-espresso-600">{hint}</div> : null}

@@ -2,6 +2,7 @@
  * Report reconciliation: proves a day report agrees with its underlying
  * transactions and inventory movements. Used by tests and shown in the UI.
  */
+import { reputationPoints } from './demand';
 import { sumSen } from './money';
 import type { DayReport, TransactionType } from './types';
 
@@ -124,7 +125,7 @@ export function shareText(report: DayReport, formatMoney: (sen: number) => strin
     `Jualan: ${formatMoney(report.revenueSen)}`,
     `Untung bersih: ${formatMoney(report.netProfitSen)}`,
     `Pelanggan dilayan: ${report.customers.served}`,
-    `Reputasi: ${Math.round(report.reputationAfter)}/100`,
+    `Reputasi: ${reputationPoints(report.reputationAfter)}/100`,
     '',
     'REAL LIFE TYCOON: Café Empire (data simulasi permainan)',
   ].join('\n');

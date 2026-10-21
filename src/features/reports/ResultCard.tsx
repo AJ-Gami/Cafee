@@ -4,7 +4,7 @@ import { Button } from '../../components/Button';
 import { CafeScene } from '../../components/CafeScene';
 import { Money } from '../../components/Money';
 import { EVENTS } from '../../game/data/events';
-import { weekdayName } from '../../game/demand';
+import { reputationPoints, weekdayName } from '../../game/demand';
 import { formatRM } from '../../game/money';
 import { shareText } from '../../game/reports';
 import type { DayReport } from '../../game/types';
@@ -100,7 +100,7 @@ export function ResultCard({ report }: { report: DayReport }) {
               <Heart className="size-3" aria-hidden="true" /> Reputasi
             </dt>
             <dd className="mt-0.5 text-lg font-semibold">
-              {Math.round(report.reputationAfter)}{' '}
+              {reputationPoints(report.reputationAfter)}{' '}
               <span className={`text-sm ${repDelta >= 0 ? 'text-sage-700' : 'text-rust-700'}`}>
                 ({repDelta >= 0 ? '+' : '−'}
                 {Math.abs(repDelta)})

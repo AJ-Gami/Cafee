@@ -31,8 +31,9 @@ function PrepView() {
   const [opening, setOpening] = useState(false);
   const problems = checklist.filter((c) => c.status === 'bad');
 
-  // Reset the local guard if a new day starts while this view stays mounted.
-  useEffect(() => setOpening(false), [game.day]);
+  // Clear the local busy flag whenever the game changes without leaving preparation
+  // (e.g. the action was dropped because another tab saved newer progress).
+  useEffect(() => setOpening(false), [game]);
 
   const open = () => {
     if (opening) return;
@@ -168,10 +169,9 @@ function ClosedView() {
   const [advancing, setAdvancing] = useState(false);
   const showPlayback = report !== null && store.justSettledDay === report.day && !playbackDone;
 
-  useEffect(() => {
-    setPlaybackDone(false);
-    setAdvancing(false);
-  }, [report?.day]);
+  useEffect(() => setPlaybackDone(false), [report?.day]);
+  // As above: never leave the button stuck if the game was replaced instead of advanced.
+  useEffect(() => setAdvancing(false), [game]);
 
   if (!report) {
     return (
@@ -189,6 +189,7 @@ function ClosedView() {
           report={report}
           onDone={() => {
             setPlaybackDone(true);
+            dispatch({ type: 'PLAYBACK_DONE' });
             window.scrollTo({ top: 0 });
           }}
         />

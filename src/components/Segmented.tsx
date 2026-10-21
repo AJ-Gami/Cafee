@@ -6,13 +6,21 @@ export interface SegmentOption<T extends string> {
   badge?: number | null;
 }
 
+/** Props for the panel controlled by a Segmented tab strip with the same `id`. */
+export function tabPanelProps(id: string, value: string) {
+  return { id: `${id}-panel`, role: 'tabpanel' as const, 'aria-labelledby': `${id}-tab-${value}`, tabIndex: -1 };
+}
+
 /** Accessible tab strip for switching sub-sections inside a screen. */
 export function Segmented<T extends string>({
+  id,
   options,
   value,
   onChange,
   label,
 }: {
+  /** Base id shared with the panel (see tabPanelProps). */
+  id: string;
   options: readonly SegmentOption<T>[];
   value: T;
   onChange: (id: T) => void;
@@ -43,6 +51,8 @@ export function Segmented<T extends string>({
             }}
             type="button"
             role="tab"
+            id={`${id}-tab-${o.id}`}
+            aria-controls={`${id}-panel`}
             aria-selected={active}
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(o.id)}

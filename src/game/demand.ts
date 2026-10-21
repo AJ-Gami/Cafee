@@ -39,13 +39,24 @@ import type {
 } from './types';
 import { PRODUCT_IDS } from './types';
 
+/** Event effects that only apply from the hour the event happens (forecast events start at opening). */
+export interface EventModifiers {
+  fromHour: number;
+  footfallMultiplier: number;
+  capacityMultiplier: number;
+  productDemand: Record<ProductId, number>;
+}
+
 export interface DemandModifiers {
+  /** All-day footfall multiplier (promotion and upgrades). */
   footfallMultiplier: number;
   conversionBonus: number;
   discountBps: number;
+  /** All-day product demand multipliers (upgrades). */
   productDemand: Record<ProductId, number>;
   capacityMultiplier: number;
   closedHours: ReadonlySet<number>;
+  event: EventModifiers | null;
 }
 
 export function weekdayIndex(day: number): number {
@@ -76,13 +87,16 @@ export function buildModifiers(
     for (const pid of PRODUCT_IDS) productDemand[pid] *= effects.productDemand?.[pid] ?? 1;
   }
 
-  let capacityMultiplier = 1;
   const closedHours = new Set<number>();
+  let eventMods: EventModifiers | null = null;
   if (event) {
-    footfall *= event.effects.trafficMultiplier ?? 1;
-    capacityMultiplier *= event.effects.capacityMultiplier ?? 1;
-    for (const pid of PRODUCT_IDS) productDemand[pid] *= event.effects.productDemand?.[pid] ?? 1;
     for (const h of event.effects.closedHours ?? []) closedHours.add(h);
+    eventMods = {
+      fromHour: event.def.hour,
+      footfallMultiplier: event.effects.trafficMultiplier ?? 1,
+      capacityMultiplier: event.effects.capacityMultiplier ?? 1,
+      productDemand: Object.fromEntries(PRODUCT_IDS.map((id) => [id, event.effects.productDemand?.[id] ?? 1])) as Record<ProductId, number>,
+    };
   }
 
   return {
@@ -90,13 +104,40 @@ export function buildModifiers(
     conversionBonus: conversion,
     discountBps: promotion.discountBps,
     productDemand,
-    capacityMultiplier,
+    capacityMultiplier: 1,
     closedHours,
+    event: eventMods,
   };
 }
 
+/** Modifiers in effect during `hour`: event effects are folded in once the event has happened. */
+export function modifiersAt(mods: DemandModifiers, hour: number): DemandModifiers {
+  const e = mods.event;
+  if (!e || hour < e.fromHour) return mods;
+  const productDemand = { ...mods.productDemand };
+  for (const id of PRODUCT_IDS) productDemand[id] *= e.productDemand[id];
+  return {
+    ...mods,
+    footfallMultiplier: mods.footfallMultiplier * e.footfallMultiplier,
+    capacityMultiplier: mods.capacityMultiplier * e.capacityMultiplier,
+    productDemand,
+    event: null,
+  };
+}
+
+function baseFootfall(day: number, reputation: number): number {
+  return (BASE_FOOTFALL + reputation * FOOTFALL_PER_REPUTATION) * weekdayFactor(day);
+}
+
+/** Expected arrivals during one opening hour. */
+export function expectedHourlyFootfall(day: number, reputation: number, mods: DemandModifiers, hour: number): number {
+  const weight = HOUR_WEIGHTS[hour - OPEN_HOUR] ?? 0;
+  return baseFootfall(day, reputation) * weight * modifiersAt(mods, hour).footfallMultiplier;
+}
+
+/** Expected arrivals over the whole day. */
 export function expectedFootfall(day: number, reputation: number, mods: DemandModifiers): number {
-  return (BASE_FOOTFALL + reputation * FOOTFALL_PER_REPUTATION) * weekdayFactor(day) * mods.footfallMultiplier;
+  return openHours().reduce((sum, h) => sum + expectedHourlyFootfall(day, reputation, mods, h), 0);
 }
 
 /** Price customers actually pay today (menu price minus any promotion discount). */
@@ -128,7 +169,7 @@ function addOnProbability(productId: ProductId, priceSen: number, mods: DemandMo
 
 export function capacityForHour(hour: number, baseCapacity: number, mods: DemandModifiers): number {
   if (mods.closedHours.has(hour)) return 0;
-  return Math.floor(baseCapacity * mods.capacityMultiplier);
+  return Math.floor(baseCapacity * modifiersAt(mods, hour).capacityMultiplier);
 }
 
 export function openHours(): number[] {
@@ -162,27 +203,34 @@ export function estimateDemand(
   upgrades: readonly UpgradeId[],
   mods: DemandModifiers,
 ): DemandEstimate {
-  const footfall = expectedFootfall(day, reputation, mods);
   const enabled = PRODUCT_IDS.filter((id) => products[id].enabled);
   const perProduct = Object.fromEntries(PRODUCT_IDS.map((id) => [id, 0])) as Record<ProductId, number>;
-  const weights = enabled.map((id) => choiceWeight(id, salePrice(products[id], mods), mods));
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
-  if (totalWeight > 0) {
+  let footfall = 0;
+  let peakHourFootfall = 0;
+  for (const hour of openHours()) {
+    const hm = modifiersAt(mods, hour);
+    const arrivals = expectedHourlyFootfall(day, reputation, mods, hour);
+    footfall += arrivals;
+    peakHourFootfall = Math.max(peakHourFootfall, arrivals);
+    const weights = enabled.map((id) => choiceWeight(id, salePrice(products[id], hm), hm));
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    if (totalWeight <= 0) continue;
+    let drinkUnits = 0;
     enabled.forEach((id, i) => {
       const share = (weights[i] ?? 0) / totalWeight;
-      perProduct[id] += footfall * share * buyProbability(id, salePrice(products[id], mods), mods);
+      const units = arrivals * share * buyProbability(id, salePrice(products[id], hm), hm);
+      perProduct[id] += units;
+      if (PRODUCTS[id].kind !== 'food') drinkUnits += units;
     });
     // Food add-ons bought alongside drinks.
-    const drinkUnits = enabled.filter((id) => PRODUCTS[id].kind !== 'food').reduce((sum, id) => sum + perProduct[id], 0);
     for (const id of enabled) {
-      if (PRODUCTS[id].addOnRate > 0) perProduct[id] += drinkUnits * addOnProbability(id, salePrice(products[id], mods), mods);
+      if (PRODUCTS[id].addOnRate > 0) perProduct[id] += drinkUnits * addOnProbability(id, salePrice(products[id], hm), hm);
     }
   }
   const base = hourlyCapacity(staff, upgrades);
   const dailyCapacity = openHours().reduce((sum, h) => sum + capacityForHour(h, base, mods), 0);
   for (const id of PRODUCT_IDS) perProduct[id] = Math.round(perProduct[id]);
-  const peakHourFootfall = Math.round(footfall * Math.max(...HOUR_WEIGHTS));
-  return { footfall: Math.round(footfall), peakHourFootfall, dailyCapacity, perProduct };
+  return { footfall: Math.round(footfall), peakHourFootfall: Math.round(peakHourFootfall), dailyCapacity, perProduct };
 }
 
 // ---------------------------------------------------------------------------
@@ -256,18 +304,19 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
     }
   };
 
-  const pickAlternative = (exclude: ProductId): ProductId | undefined =>
+  const pickAlternative = (exclude: ProductId, hm: DemandModifiers): ProductId | undefined =>
     rng.weighted(
       enabled.filter((id) => id !== exclude && products[id].stock > 0),
-      (id) => choiceWeight(id, lines[id].salePriceSen, mods),
+      (id) => choiceWeight(id, lines[id].salePriceSen, hm),
     );
 
-  const footfall = expectedFootfall(input.day, input.reputation, mods);
   let busiest = { hour: OPEN_HOUR, served: -1 };
 
-  HOUR_WEIGHTS.forEach((weight, index) => {
-    const hour = OPEN_HOUR + index;
-    const arrivals = Math.max(0, Math.round(footfall * weight * (0.85 + rng.next() * 0.3)));
+  for (const hour of openHours()) {
+    // Event effects (traffic, capacity, product mix) only apply once the event has happened.
+    const hm = modifiersAt(mods, hour);
+    const expected = expectedHourlyFootfall(input.day, input.reputation, mods, hour);
+    const arrivals = Math.max(0, Math.round(expected * (0.85 + rng.next() * 0.3)));
     const capacity = capacityForHour(hour, input.baseHourlyCapacity, mods);
     const line: HourlyLine = {
       hour,
@@ -306,7 +355,7 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
         line.lostCapacity += 1;
         continue;
       }
-      const desired = rng.weighted(enabled, (id) => choiceWeight(id, lines[id].salePriceSen, mods));
+      const desired = rng.weighted(enabled, (id) => choiceWeight(id, lines[id].salePriceSen, hm));
       if (!desired) {
         // Nothing on the menu at all.
         line.lostStock += 1;
@@ -318,19 +367,19 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
       if (products[desired].stock === 0) {
         lines[desired].unmetStockout += 1;
         if (rng.chance(SUBSTITUTE_ON_STOCKOUT)) {
-          const alt = pickAlternative(desired);
-          if (alt && rng.chance(buyProbability(alt, lines[alt].salePriceSen, mods))) bought = alt;
+          const alt = pickAlternative(desired, hm);
+          if (alt && rng.chance(buyProbability(alt, lines[alt].salePriceSen, hm))) bought = alt;
         }
         if (!bought) {
           line.lostStock += 1;
           continue;
         }
-      } else if (rng.chance(buyProbability(desired, lines[desired].salePriceSen, mods))) {
+      } else if (rng.chance(buyProbability(desired, lines[desired].salePriceSen, hm))) {
         bought = desired;
       } else {
         if (rng.chance(SUBSTITUTE_ON_PRICE)) {
-          const alt = pickAlternative(desired);
-          if (alt && rng.chance(buyProbability(alt, lines[alt].salePriceSen, mods))) bought = alt;
+          const alt = pickAlternative(desired, hm);
+          if (alt && rng.chance(buyProbability(alt, lines[alt].salePriceSen, hm))) bought = alt;
         }
         if (!bought) {
           line.lostPrice += 1;
@@ -344,7 +393,7 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
       if (drinks.includes(bought)) {
         for (const addOn of addOns) {
           if (addOn === bought) continue;
-          if (!rng.chance(addOnProbability(addOn, lines[addOn].salePriceSen, mods))) continue;
+          if (!rng.chance(addOnProbability(addOn, lines[addOn].salePriceSen, hm))) continue;
           lines[addOn].demanded += 1;
           if (products[addOn].stock > 0) sell(addOn, hour, line);
           else lines[addOn].unmetStockout += 1;
@@ -357,7 +406,7 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
     }
     if (line.served > busiest.served) busiest = { hour, served: line.served };
     hourly.push(line);
-  });
+  }
 
   if (busiest.served > 0) {
     timeline.push({
@@ -401,6 +450,11 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
 // ---------------------------------------------------------------------------
 // Reputation
 // ---------------------------------------------------------------------------
+
+/** Whole reputation points for display. Rounds down so it never shows a milestone not yet reached. */
+export function reputationPoints(reputation: number): number {
+  return Math.floor(reputation + 1e-9);
+}
 
 export interface ReputationInput {
   reputation: number;

@@ -75,11 +75,14 @@ function ProductMenuCard({ view, locked }: { view: ProductView; locked: boolean 
   };
 
   return (
-    <Card className={view.enabled ? '' : 'opacity-80'}>
+    <Card className={view.enabled ? '' : 'border-dashed bg-cream-100 shadow-none'}>
       <div className="flex items-start gap-3">
         <ProductIcon id={view.id} />
         <div className="min-w-0 flex-1">
-          <h2 className="font-display text-lg leading-tight text-espresso-800">{view.name}</h2>
+          <h2 className="flex flex-wrap items-center gap-2 font-display text-lg leading-tight text-espresso-800">
+            {view.name}
+            {!view.enabled ? <Badge>Tiada dalam menu</Badge> : null}
+          </h2>
           <p className="text-sm text-espresso-600">{def.description}</p>
         </div>
         <Switch
@@ -92,7 +95,7 @@ function ProductMenuCard({ view, locked }: { view: ProductView; locked: boolean 
 
       <div className="mt-3">
         <label htmlFor={inputId} className="text-xs font-semibold uppercase tracking-wide text-espresso-600">
-          Harga jualan
+          Harga jualan<span className="sr-only"> {view.name}</span>
         </label>
         <div className="mt-1 flex items-center gap-2">
           <Button variant="secondary" aria-label={`Kurangkan harga ${view.name} 10 sen`} disabled={locked} onClick={() => step(-PRICE_STEP_SEN)} className="w-11 px-0">

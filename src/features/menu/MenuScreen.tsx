@@ -3,7 +3,7 @@ import { useGame } from '../../app/GameProvider';
 import { useNav } from '../../app/navigation';
 import { ScreenTitle } from '../../components/Card';
 import { Notice } from '../../components/Notice';
-import { Segmented } from '../../components/Segmented';
+import { Segmented, tabPanelProps } from '../../components/Segmented';
 import { productViews } from '../../game/selectors';
 import { InventoryPanel } from '../inventory/InventoryPanel';
 import { MenuPanel } from './MenuPanel';
@@ -21,6 +21,7 @@ export function MenuScreen() {
     <div className="space-y-4">
       <ScreenTitle title="Menu & Stok" subtitle="Tetapkan harga, pilih menu dan beli stok." />
       <Segmented<MenuTab>
+        id="menu-tabs"
         label="Bahagian menu"
         value={tab}
         onChange={setSub}
@@ -34,7 +35,7 @@ export function MenuScreen() {
           Perubahan harga dan belian stok dibuka semula apabila anda memulakan hari seterusnya di skrin Operasi.
         </Notice>
       ) : null}
-      <div role="tabpanel" aria-label={tab === 'harga' ? 'Menu & harga' : 'Inventori'}>
+      <div {...tabPanelProps('menu-tabs', tab)}>
         {tab === 'harga' ? <MenuPanel locked={locked} /> : <InventoryPanel locked={locked} />}
       </div>
     </div>

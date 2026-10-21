@@ -4,13 +4,14 @@ import { Badge } from '../../components/Badge';
 import { Card, CardTitle } from '../../components/Card';
 import { ProgressBar } from '../../components/ProgressBar';
 import { LEVELS } from '../../game/data/objectives';
+import { reputationPoints } from '../../game/demand';
 import { formatRM } from '../../game/money';
 import { levelInfo } from '../../game/objectives';
 import { objectiveViews, type ObjectiveView } from '../../game/selectors';
 
 function formatProgress(o: ObjectiveView): string {
   if (o.unit === 'sen') return `${formatRM(o.current, { trimZeroSen: true })} / ${formatRM(o.target, { trimZeroSen: true })}`;
-  if (o.unit === 'points') return `${Math.floor(o.current)} / ${o.target}`;
+  if (o.unit === 'points') return `${reputationPoints(o.current)} / ${o.target}`;
   return `${o.current.toLocaleString('en-MY')} / ${o.target.toLocaleString('en-MY')}`;
 }
 
@@ -57,7 +58,7 @@ export function ObjectivesPanel() {
         <CardTitle title="Objektif" subtitle={`${done} daripada ${objectives.length} dicapai. Tahap lebih tinggi membuka naik taraf dan promosi baharu.`} icon={<Target className="size-5" />} />
         <ul className="space-y-4">
           {objectives.map((o) => (
-            <li key={o.id} className={o.complete ? 'opacity-75' : ''}>
+            <li key={o.id} className={o.complete ? '-mx-2 rounded-xl bg-sage-50 px-2 py-1.5' : ''}>
               <div className="flex items-start justify-between gap-2">
                 <p className="flex items-center gap-1.5 font-semibold">
                   {o.complete ? <CircleCheck className="size-4 text-sage-700" aria-label="Selesai" /> : null}

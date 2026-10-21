@@ -37,7 +37,10 @@ export function baristaCount(staff: readonly StaffMember[]): number {
 /** Deterministic candidates for a given day. Already-hired candidates are excluded. */
 export function candidatesForDay(seed: number, day: number, staff: readonly StaffMember[]): StaffCandidate[] {
   const rng = dayRng(seed, day, RNG_PURPOSE.candidates);
-  const takenNames = new Set(staff.map((s) => s.name));
+  // Exclude names of staff hired on earlier days only, so hiring one of today's candidates
+  // does not reshuffle the names of the others.
+  const todaysPrefix = `staff-d${day}-`;
+  const takenNames = new Set(staff.filter((s) => !s.id.startsWith(todaysPrefix)).map((s) => s.name));
   const takenIds = new Set(staff.map((s) => s.id));
   const roles: StaffRole[] = ['barista', 'cashier', rng.chance(0.5) ? 'barista' : 'cashier'];
   const result: StaffCandidate[] = [];

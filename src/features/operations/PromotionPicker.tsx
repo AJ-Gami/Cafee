@@ -22,8 +22,12 @@ export function PromotionPicker() {
               disabled={disabled}
               onClick={() => dispatch({ type: 'SET_PROMOTION', promotionId: o.id })}
               className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed ${
-                o.selected ? 'border-sage-600 bg-sage-50 ring-1 ring-sage-600' : 'border-espresso-800/10 bg-cream-50 hover:bg-cream-100'
-              } ${disabled ? 'opacity-60' : ''}`}
+                o.selected
+                  ? 'border-sage-600 bg-sage-50 ring-1 ring-sage-600'
+                  : disabled
+                    ? 'border-dashed border-espresso-800/20 bg-cream-100'
+                    : 'border-espresso-800/10 bg-cream-50 hover:bg-cream-100'
+              }`}
             >
               <span
                 className={`mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${

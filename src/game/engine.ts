@@ -19,9 +19,10 @@ import { PRODUCTS } from './data/products';
 import { PROMOTIONS } from './data/promotions';
 import { STAFF_ROLES, STARTING_STAFF } from './data/staff';
 import { UPGRADES } from './data/upgrades';
-import { buildModifiers, formatHour, reputationChange, simulateDay, weekdayName } from './demand';
+import { buildModifiers, capacityForHour, formatHour, reputationChange, simulateDay, weekdayName } from './demand';
 import {
   addToStock,
+  canAfford,
   dailyRent,
   dailyUtilities,
   inventoryValue,
@@ -273,7 +274,7 @@ export function setPromotion(state: GameState, promotionId: PromotionId): Engine
   if (!isPromotionId(promotionId)) return fail('UNKNOWN_ITEM', 'Promosi tidak dikenali.');
   const def = PROMOTIONS[promotionId];
   if (currentLevel(state) < def.minLevel) return fail('LOCKED', `Promosi ini dibuka pada Tahap ${def.minLevel}.`);
-  if (def.costSen > state.cashSen) return insufficient(def.costSen, state.cashSen);
+  if (!canAfford(def.costSen, state.cashSen)) return insufficient(def.costSen, state.cashSen);
   if (state.promotion === promotionId) return fail('NO_CHANGE', 'Promosi ini sudah dipilih.');
   const message =
     promotionId === 'none'
@@ -397,7 +398,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
 
   const event = resolveEvent(state.todayEventId, state.upgrades);
   const chosenPromo = PROMOTIONS[state.promotion];
-  const promotionSkipped = chosenPromo.costSen > state.cashSen;
+  const promotionSkipped = !canAfford(chosenPromo.costSen, state.cashSen);
   const promo = promotionSkipped ? PROMOTIONS.none : chosenPromo;
   const mods = buildModifiers(state.upgrades, promo, event);
   const baseHourlyCapacity = hourlyCapacity(state.staff, state.upgrades);
@@ -498,7 +499,11 @@ export function openCafe(state: GameState, day: number): EngineResult {
 
   // --- Timeline ---
   const timeline: TimelineEntry[] = [
-    { hour: 8, tone: 'neutral', text: `Kafe dibuka. Hari ${weekdayName(day)}, kapasiti ${baseHourlyCapacity} pesanan sejam.` },
+    {
+      hour: 8,
+      tone: 'neutral',
+      text: `Kafe dibuka. Hari ${weekdayName(day)}, kapasiti ${capacityForHour(8, baseHourlyCapacity, mods)} pesanan sejam.`,
+    },
   ];
   if (promotionSkipped) {
     timeline.push({ hour: 8, tone: 'warn', text: `Promosi "${chosenPromo.name}" dibatalkan — tunai tidak mencukupi.` });

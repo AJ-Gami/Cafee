@@ -29,6 +29,11 @@ export interface PurchaseQuote {
   surchargeBps: number;
 }
 
+/** A cost the café can pay right now. Free items are always affordable, even with negative cash. */
+export function canAfford(costSen: number, cashSen: number): boolean {
+  return costSen <= 0 || costSen <= cashSen;
+}
+
 export function bulkDiscountBps(quantity: number): number {
   for (const tier of BULK_DISCOUNTS) {
     if (quantity >= tier.minQty) return tier.bps;

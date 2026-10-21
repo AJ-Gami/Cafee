@@ -8,7 +8,7 @@ import { Card, CardTitle, Row, ScreenTitle } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { Sheet } from '../../components/Modal';
 import { Money } from '../../components/Money';
-import { Segmented } from '../../components/Segmented';
+import { Segmented, tabPanelProps } from '../../components/Segmented';
 import { Stat } from '../../components/Stat';
 import { HISTORY_LIMIT } from '../../game/constants';
 import { weekdayName } from '../../game/demand';
@@ -26,6 +26,7 @@ export function FinanceScreen() {
     <div className="space-y-4">
       <ScreenTitle title="Kewangan & laporan" subtitle="Semua angka ialah data simulasi permainan." />
       <Segmented<FinanceTab>
+        id="kewangan-tabs"
         label="Bahagian kewangan"
         value={tab}
         onChange={setSub}
@@ -35,7 +36,7 @@ export function FinanceScreen() {
           { id: 'lejar', label: 'Lejar' },
         ]}
       />
-      <div role="tabpanel">
+      <div {...tabPanelProps('kewangan-tabs', tab)}>
         {tab === 'ringkasan' && <SummaryPanel />}
         {tab === 'laporan' && <ReportsPanel />}
         {tab === 'lejar' && <LedgerPanel />}
@@ -54,16 +55,19 @@ function SummaryPanel() {
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <Stat label="Baki tunai" icon={<Wallet className="size-3.5" aria-hidden="true" />} value={<Money sen={game.cashSen} tabular={false} />} />
-        <Stat label="Nilai inventori" value={<Money sen={currentInventoryValue(game)} tabular={false} />} />
-        <Stat label="Jumlah hasil" value={<Money sen={s.totalRevenueSen} tabular={false} />} hint={`${s.daysCompleted} hari beroperasi`} />
-        <Stat
-          label="Jumlah untung"
-          value={<Money sen={s.totalNetProfitSen} colored tabular={false} />}
-          hint={`${s.profitableDays} hari untung`}
-        />
-      </div>
+      <Stat
+        emphasis
+        label="Baki tunai"
+        icon={<Wallet className="size-3.5" aria-hidden="true" />}
+        value={<Money sen={game.cashSen} tabular={false} className={game.cashSen < 0 ? 'text-rust-700' : ''} />}
+      />
+      <Card>
+        <dl className="divide-y divide-espresso-800/[0.07]">
+          <Row label="Nilai inventori" value={<Money sen={currentInventoryValue(game)} />} />
+          <Row label={`Jumlah hasil (${s.daysCompleted} hari)`} value={<Money sen={s.totalRevenueSen} />} />
+          <Row label={`Jumlah untung bersih (${s.profitableDays} hari untung)`} value={<Money sen={s.totalNetProfitSen} colored />} strong />
+        </dl>
+      </Card>
 
       {series.length === 0 ? (
         <EmptyState

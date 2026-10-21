@@ -32,7 +32,38 @@ export interface StorageLike {
 export interface SaveEnvelope {
   schemaVersion: number;
   savedAt: string;
+  /** Random id of this write, used to detect saves made by another tab. Absent in older saves. */
+  saveId?: string;
   game: GameState;
+}
+
+/** Random id for a save write (not security-sensitive). */
+export function newSaveId(): string {
+  const cryptoObj = (globalThis as { crypto?: Crypto }).crypto;
+  if (cryptoObj?.getRandomValues) {
+    const buf = new Uint32Array(2);
+    cryptoObj.getRandomValues(buf);
+    return `${(buf[0] ?? 0).toString(36)}${(buf[1] ?? 0).toString(36)}`;
+  }
+  return `${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`;
+}
+
+/**
+ * Cheaply read the id of the stored save without parsing the whole game.
+ * Returns null when there is no save or it has no id, and undefined when storage cannot be read.
+ */
+export function peekSaveId(storage: StorageLike | null): string | null | undefined {
+  if (!storage) return undefined;
+  let text: string | null;
+  try {
+    text = storage.getItem(SAVE_KEY);
+  } catch {
+    return undefined;
+  }
+  if (text === null) return null;
+  // saveGame writes saveId before the (large) game object, so it sits near the start.
+  const match = /"saveId":"([^"]{1,64})"/.exec(text.slice(0, 256));
+  return match?.[1] ?? null;
 }
 
 /** Returns localStorage if it is present and writable, otherwise null (private mode, disabled storage, SSR). */
@@ -180,7 +211,7 @@ export function migrateSave(raw: unknown): MigrationResult {
 
 export type LoadResult =
   | { status: 'empty' }
-  | { status: 'loaded'; game: GameState; savedAt: string | null; migratedFrom: number | null }
+  | { status: 'loaded'; game: GameState; savedAt: string | null; saveId: string | null; migratedFrom: number | null }
   | { status: 'corrupt'; error: string; backedUp: boolean }
   | { status: 'unavailable' };
 
@@ -217,22 +248,30 @@ export function loadGame(storage: StorageLike | null): LoadResult {
   if (!validated.ok) return corrupt(`Data simpanan tidak sah (${validated.errors.slice(0, 3).join('; ')}).`);
 
   const savedAt = isObj(parsed) && typeof parsed.savedAt === 'string' ? parsed.savedAt : null;
+  const saveId = isObj(parsed) && typeof parsed.saveId === 'string' ? parsed.saveId : null;
   return {
     status: 'loaded',
     game: validated.state,
     savedAt,
+    saveId,
     migratedFrom: migrated.fromVersion === SAVE_SCHEMA_VERSION ? null : migrated.fromVersion,
   };
 }
 
-export type SaveResult = { ok: true; savedAt: string } | { ok: false; error: string };
+export type SaveResult = { ok: true; savedAt: string; saveId: string } | { ok: false; error: string };
 
-export function saveGame(storage: StorageLike | null, game: GameState, now: Date = new Date()): SaveResult {
+export function saveGame(
+  storage: StorageLike | null,
+  game: GameState,
+  now: Date = new Date(),
+  saveId: string = newSaveId(),
+): SaveResult {
   if (!storage) return { ok: false, error: 'Storan pelayar tidak tersedia. Kemajuan tidak dapat disimpan.' };
-  const envelope: SaveEnvelope = { schemaVersion: SAVE_SCHEMA_VERSION, savedAt: now.toISOString(), game };
+  // Key order matters: saveId must precede game so peekSaveId can find it cheaply.
+  const envelope: SaveEnvelope = { schemaVersion: SAVE_SCHEMA_VERSION, savedAt: now.toISOString(), saveId, game };
   try {
     storage.setItem(SAVE_KEY, JSON.stringify(envelope));
-    return { ok: true, savedAt: envelope.savedAt };
+    return { ok: true, savedAt: envelope.savedAt, saveId };
   } catch {
     return { ok: false, error: 'Gagal menyimpan — storan pelayar mungkin penuh atau disekat.' };
   }

@@ -37,6 +37,23 @@ describe('event rolls', () => {
 describe('event effects', () => {
   const stocked = () => stockAll(newGame(), 150);
 
+  it('surprise events only affect hours from when they happen', () => {
+    const calm = settle(stocked()).report;
+    const viral = settle(withEvent(stocked(), 'viral_post')).report; // happens at 12:00
+    const before = (r: typeof calm) => r.hourly.filter((h) => h.hour < 12);
+    const after = (r: typeof calm) => r.hourly.filter((h) => h.hour >= 12).reduce((n, h) => n + h.arrivals, 0);
+    expect(before(viral)).toEqual(before(calm));
+    expect(after(viral)).toBeGreaterThan(after(calm));
+    const opening = viral.timeline[0]?.text ?? '';
+    expect(opening).toContain('kapasiti 8 pesanan sejam');
+  });
+
+  it('forecast events apply from opening time', () => {
+    const calm = settle(stocked()).report;
+    const fest = settle(withEvent(stocked(), 'food_festival')).report;
+    expect(fest.hourly[0]?.arrivals).toBeGreaterThan(calm.hourly[0]?.arrivals ?? 0);
+  });
+
   it('heavy rain reduces footfall', () => {
     const calm = settle(stocked()).report;
     const rain = settle(withEvent(stocked(), 'heavy_rain')).report;
@@ -68,7 +85,10 @@ describe('event effects', () => {
 
   it('machine breakdown cuts capacity and charges repairs as other expenses', () => {
     const { report } = settle(withEvent(stocked(), 'machine_breakdown'));
-    expect(report.hourly[0]?.capacity).toBe(5); // floor(8 * 0.65)
+    // The machine breaks at 11:00: full capacity before, floor(8 * 0.65) = 5 afterwards.
+    expect(report.hourly.find((h) => h.hour === 10)?.capacity).toBe(8);
+    expect(report.hourly.find((h) => h.hour === 11)?.capacity).toBe(5);
+    expect(report.hourly.find((h) => h.hour === 19)?.capacity).toBe(5);
     expect(report.expenses.eventCostSen).toBe(12_000);
     expect(report.transactions).toContainEqual(expect.objectContaining({ type: 'event_cost', amountSen: -12_000 }));
     expect(reconcileReport(report).ok).toBe(true);

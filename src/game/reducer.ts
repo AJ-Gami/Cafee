@@ -34,7 +34,9 @@ export type GameAction =
   | { type: 'RENAME'; name: string }
   | { type: 'REPLACE_GAME'; game: GameState }
   | { type: 'RESET'; seed: number }
-  | { type: 'DISMISS_FEEDBACK'; id: number };
+  | { type: 'DISMISS_FEEDBACK'; id: number }
+  /** The live replay of a settled day has been watched or skipped. */
+  | { type: 'PLAYBACK_DONE' };
 
 export interface Feedback {
   id: number;
@@ -114,6 +116,8 @@ export function gameReducer(store: GameStore, action: GameAction): GameStore {
         feedback: { id, kind: 'info', message: 'Permainan baharu dimulakan. Semoga berjaya!', objectives: [] },
       };
     }
+    case 'PLAYBACK_DONE':
+      return store.justSettledDay === null ? store : { ...store, justSettledDay: null };
     case 'DISMISS_FEEDBACK':
       return store.feedback?.id === action.id ? { ...store, feedback: null } : store;
     default:

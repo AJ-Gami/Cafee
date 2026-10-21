@@ -19,7 +19,7 @@ export function GlobalNotices({ onOpenSettings }: { onOpenSettings: () => void }
       ) : null}
       {bootNotice ? (
         <Notice
-          tone={bootNotice.kind === 'corrupt' ? 'warn' : bootNotice.kind === 'migrated' ? 'info' : 'good'}
+          tone={bootNotice.kind === 'corrupt' || bootNotice.kind === 'synced' ? 'warn' : bootNotice.kind === 'migrated' ? 'info' : 'good'}
           title={bootNotice.kind === 'corrupt' ? 'Simpanan rosak dipulihkan' : undefined}
           onDismiss={dismissBootNotice}
           role="status"

@@ -300,6 +300,20 @@ describe('promotions', () => {
     expect(report.products.find((l) => l.productId === 'latte')?.salePriceSen).toBe(630);
   });
 
+  it('keeps free promotions available when cash is negative', () => {
+    const broke = { ...newGame(), cashSen: -5_000, dayStart: { cashSen: -5_000, inventorySen: 0 } };
+    const discounted = expectOk(setPromotion(broke, 'discount10')).state;
+    expect(expectFail(setPromotion(broke, 'social')).error).toBe('INSUFFICIENT_FUNDS');
+    const plain = settle(stockAll({ ...broke, cashSen: 50_000, dayStart: { cashSen: 50_000, inventorySen: 0 } }, 10));
+    expect(plain.report.promotionSkipped).toBe(false);
+    const noPromo = settle(broke).report;
+    expect(noPromo.promotionSkipped).toBe(false);
+    expect(noPromo.timeline.some((t) => t.text.includes('dibatalkan'))).toBe(false);
+    const free = settle(discounted).report;
+    expect(free.promotionSkipped).toBe(false);
+    expect(free.promotionId).toBe('discount10');
+  });
+
   it('locks higher-level promotions', () => {
     expect(expectFail(setPromotion(newGame(), 'influencer')).error).toBe('LOCKED');
   });
@@ -317,6 +331,17 @@ describe('staff', () => {
     const { report } = settle(stockAll(r.state));
     expect(report.expenses.wagesSen).toBe(9_000 + candidate.wageSen);
     expect(report.expenses.hiringSen).toBe(candidate.hireFeeSen);
+  });
+
+  it('keeps the other candidates unchanged after hiring one', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const s = createNewGame(seed);
+      const before = hiringCandidates(s);
+      const pick = before[seed % before.length];
+      if (!pick) continue;
+      const after = hiringCandidates(expectOk(hireStaff(s, pick.id)).state);
+      expect(after).toEqual(before.filter((c) => c.id !== pick.id));
+    }
   });
 
   it('enforces staff slots and keeps at least one barista', () => {

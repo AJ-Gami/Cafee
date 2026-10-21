@@ -11,7 +11,7 @@ import { Money } from '../../components/Money';
 import { Notice } from '../../components/Notice';
 import { ProgressBar } from '../../components/ProgressBar';
 import { Stat } from '../../components/Stat';
-import { weekdayName } from '../../game/demand';
+import { reputationPoints, weekdayName } from '../../game/demand';
 import { formatRM } from '../../game/money';
 import { levelInfo } from '../../game/objectives';
 import { historySeries } from '../../game/reports';
@@ -119,7 +119,7 @@ export function DashboardScreen() {
           icon={<Heart className="size-3.5" aria-hidden="true" />}
           value={
             <span>
-              {Math.round(game.reputation)}
+              {reputationPoints(game.reputation)}
               <span className="text-sm font-normal text-espresso-600">/100</span>
             </span>
           }

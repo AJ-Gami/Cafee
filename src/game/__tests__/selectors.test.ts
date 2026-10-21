@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { setPromotion } from '../engine';
 import { formatRMCompact } from '../money';
 import { cumulativeByHour, historySeries } from '../reports';
+import { reputationPoints } from '../demand';
 import {
+  capacityAfterHire,
   dayEstimate,
+  hiringCandidates,
   prepChecklist,
   previewPrice,
   pricePerception,
@@ -62,6 +65,22 @@ describe('selectors', () => {
     expect(cumulative).toHaveLength(12);
     expect(cumulative[cumulative.length - 1]?.revenueSen).toBe(report.revenueSen);
     expect(cumulative[cumulative.length - 1]?.served).toBe(report.customers.served);
+  });
+
+  it('reports the real capacity gain of a hire, including upgrades', () => {
+    const s = { ...newGame(), upgrades: ['espresso_machine' as const] };
+    const barista = hiringCandidates(s).find((c) => c.role === 'barista');
+    if (!barista) throw new Error('no barista');
+    const cap = capacityAfterHire(s, barista);
+    expect(cap.before).toBe(10); // floor(8 * 1.25)
+    expect(cap.after).toBe(Math.floor((8 + barista.ordersPerHour) * 1.25));
+    expect(cap.gain).toBe(cap.after - cap.before);
+  });
+
+  it('never displays a reputation milestone that has not been reached', () => {
+    expect(reputationPoints(69.6)).toBe(69);
+    expect(reputationPoints(70)).toBe(70);
+    expect(reputationPoints(50)).toBe(50);
   });
 
   it('formats compact axis labels', () => {

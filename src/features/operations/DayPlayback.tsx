@@ -44,7 +44,10 @@ export function DayPlayback({ report, onDone }: { report: DayReport; onDone: () 
   const visibleEvents = report.timeline.filter((t) => t.hour <= currentHour).slice(-5);
 
   return (
-    <Card className="overflow-hidden" aria-live="polite">
+    <Card className="overflow-hidden">
+      <p className="sr-only" role="status">
+        {step >= totalSteps ? `Kafe ditutup. ${snapshot.served} pelanggan dilayan.` : step === 0 ? `Hari ${report.day}: kafe dibuka.` : ''}
+      </p>
       <div className="flex items-center gap-3">
         <span className="inline-flex size-11 items-center justify-center rounded-xl bg-sage-700 text-white">
           <Store className="size-5" aria-hidden="true" />

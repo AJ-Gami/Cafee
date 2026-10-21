@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
-let openModals = 0;
+/** Open modals, innermost last. Only the top-most one reacts to Escape and traps Tab. */
+const modalStack: symbol[] = [];
 
 function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.RefObject<HTMLDivElement | null>) {
   const onCloseRef = useRef(onClose);
@@ -13,13 +14,15 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
   useEffect(() => {
     if (!open) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    openModals += 1;
+    const token = Symbol('modal');
+    modalStack.push(token);
     document.body.style.overflow = 'hidden';
     const panel = panelRef.current;
     const first = panel?.querySelector<HTMLElement>('[data-autofocus]') ?? panel?.querySelector<HTMLElement>(FOCUSABLE);
     first?.focus();
 
     const onKey = (e: KeyboardEvent) => {
+      if (modalStack[modalStack.length - 1] !== token) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         onCloseRef.current();
@@ -41,8 +44,9 @@ function useModalBehaviour(open: boolean, onClose: () => void, panelRef: React.R
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
-      openModals -= 1;
-      if (openModals === 0) document.body.style.overflow = '';
+      const index = modalStack.indexOf(token);
+      if (index >= 0) modalStack.splice(index, 1);
+      if (modalStack.length === 0) document.body.style.overflow = '';
       previouslyFocused?.focus?.();
     };
   }, [open, panelRef]);

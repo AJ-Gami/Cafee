@@ -120,7 +120,7 @@ export const EVENTS: Record<EventId, EventDef> = {
   machine_breakdown: {
     id: 'machine_breakdown',
     title: 'Mesin espreso rosak',
-    description: 'Mesin rosak pada waktu puncak. Kapasiti menurun dan kos pembaikan RM120 dikenakan.',
+    description: 'Mesin rosak pada waktu puncak. Kapasiti servis menurun mulai jam 11 pagi dan kos pembaikan perlu dibayar.',
     visibility: 'surprise',
     tone: 'bad',
     weight: 6,
@@ -147,7 +147,7 @@ export const EVENTS: Record<EventId, EventDef> = {
   health_inspection: {
     id: 'health_inspection',
     title: 'Pemeriksaan kesihatan',
-    description: 'Pegawai kesihatan membuat pemeriksaan mengejut. Kompaun RM200 dikenakan atas kekurangan kebersihan.',
+    description: 'Pegawai kesihatan membuat pemeriksaan mengejut. Kekurangan kebersihan boleh dikenakan kompaun sehingga RM200.',
     visibility: 'surprise',
     tone: 'bad',
     weight: 5,
@@ -185,7 +185,7 @@ export const EVENTS: Record<EventId, EventDef> = {
   viral_post: {
     id: 'viral_post',
     title: 'Hantaran tular!',
-    description: 'Video pelanggan tentang kafe anda tular di media sosial. Ramai datang mencuba.',
+    description: 'Video pelanggan tentang kafe anda tular di media sosial. Ramai datang mencuba mulai tengah hari.',
     visibility: 'surprise',
     tone: 'good',
     weight: 4,
