@@ -79,3 +79,15 @@ export function marginPercent(priceSen: number, costSen: number): number {
   if (priceSen <= 0) return 0;
   return Math.round(((priceSen - costSen) * 1000) / priceSen) / 10;
 }
+
+/** Short axis/tile label, e.g. 123456 -> "RM1.2K". Display only. */
+export function formatRMCompact(sen: number): string {
+  const negative = sen < 0;
+  const abs = Math.abs(sen);
+  let body: string;
+  if (abs >= 100_000_000) body = `RM${(abs / 100_000_000).toFixed(1)}M`;
+  else if (abs >= 1_000_000) body = `RM${(abs / 100_000).toFixed(0)}K`;
+  else if (abs >= 100_000) body = `RM${(abs / 100_000).toFixed(1)}K`;
+  else body = `RM${Math.round(abs / 100)}`;
+  return `${negative ? '−' : ''}${body.replace('.0K', 'K').replace('.0M', 'M')}`;
+}

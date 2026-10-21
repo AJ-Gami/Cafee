@@ -129,3 +129,37 @@ export function shareText(report: DayReport, formatMoney: (sen: number) => strin
     'REAL LIFE TYCOON: Café Empire (data simulasi permainan)',
   ].join('\n');
 }
+
+export interface HistoryPoint {
+  day: number;
+  label: string;
+  revenueSen: number;
+  netProfitSen: number;
+  closingCashSen: number;
+  served: number;
+}
+
+/** Last `count` days for charts (values stay in sen). */
+export function historySeries(history: readonly DayReport[], count: number): HistoryPoint[] {
+  return history.slice(-count).map((r) => ({
+    day: r.day,
+    label: `H${r.day}`,
+    revenueSen: r.revenueSen,
+    netProfitSen: r.netProfitSen,
+    closingCashSen: r.closingCashSen,
+    served: r.customers.served,
+  }));
+}
+
+/** Running totals by hour for the live day playback. */
+export function cumulativeByHour(report: DayReport): { hour: number; served: number; revenueSen: number; lost: number }[] {
+  let served = 0;
+  let revenueSen = 0;
+  let lost = 0;
+  return report.hourly.map((h) => {
+    served += h.served;
+    revenueSen += h.revenueSen;
+    lost += h.lostCapacity + h.lostStock + h.lostPrice + h.lostClosed;
+    return { hour: h.hour, served, revenueSen, lost };
+  });
+}

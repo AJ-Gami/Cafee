@@ -147,6 +147,8 @@ export function formatHour(hour: number): string {
 
 export interface DemandEstimate {
   footfall: number;
+  /** Expected arrivals in the busiest hour. */
+  peakHourFootfall: number;
   dailyCapacity: number;
   perProduct: Record<ProductId, number>;
 }
@@ -179,7 +181,8 @@ export function estimateDemand(
   const base = hourlyCapacity(staff, upgrades);
   const dailyCapacity = openHours().reduce((sum, h) => sum + capacityForHour(h, base, mods), 0);
   for (const id of PRODUCT_IDS) perProduct[id] = Math.round(perProduct[id]);
-  return { footfall: Math.round(footfall), dailyCapacity, perProduct };
+  const peakHourFootfall = Math.round(footfall * Math.max(...HOUR_WEIGHTS));
+  return { footfall: Math.round(footfall), peakHourFootfall, dailyCapacity, perProduct };
 }
 
 // ---------------------------------------------------------------------------
@@ -357,7 +360,11 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
   });
 
   if (busiest.served > 0) {
-    timeline.push({ hour: busiest.hour, tone: 'good', text: `Waktu paling sibuk: ${busiest.served} pesanan dalam sejam.` });
+    timeline.push({
+      hour: CLOSE_HOUR,
+      tone: 'good',
+      text: `Waktu paling sibuk ialah ${formatHour(busiest.hour)} dengan ${busiest.served} pesanan.`,
+    });
   }
 
   const sum = (key: keyof Omit<HourlyLine, 'hour'>): number => hourly.reduce((acc, h) => acc + h[key], 0);

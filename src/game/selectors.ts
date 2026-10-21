@@ -286,3 +286,28 @@ export function eventTitle(id: string | null): string | null {
   if (!id) return null;
   return id in EVENTS ? EVENTS[id as keyof typeof EVENTS].title : null;
 }
+
+export interface PricePreview {
+  priceSen: number;
+  salePriceSen: number;
+  marginSen: number;
+  marginPct: number;
+  perception: PricePerception;
+  referencePriceSen: number;
+}
+
+/** Margin and customer perception for a price the player is considering (not yet saved). */
+export function previewPrice(state: GameState, productId: ProductId, priceSen: number): PricePreview {
+  const visibleEvent = isEventVisibleInPrep(state.todayEventId) ? resolveEvent(state.todayEventId, state.upgrades) : null;
+  const mods = modifiersForState(state, visibleEvent);
+  const sale = salePrice({ ...state.products[productId], priceSen }, mods);
+  const { unitCostSen } = todaysUnitCost(state, productId);
+  return {
+    priceSen,
+    salePriceSen: sale,
+    marginSen: sale - unitCostSen,
+    marginPct: marginPercent(sale, unitCostSen),
+    perception: pricePerception(productId, sale),
+    referencePriceSen: PRODUCTS[productId].referencePriceSen,
+  };
+}
