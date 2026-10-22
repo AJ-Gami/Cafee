@@ -2,7 +2,8 @@ import { X } from 'lucide-react';
 import { useEffect, useId, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select, textarea, details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
 
 /**
  * Open modals, innermost last. Only the top-most one reacts to Escape and traps Tab. `focusTarget`
@@ -65,12 +66,18 @@ function useModalBehaviour(
       if (items.length === 0) return;
       const firstEl = items[0] as HTMLElement;
       const lastEl = items[items.length - 1] as HTMLElement;
-      // Focus can end up outside (e.g. on <body> after the focused control was removed) or on the
-      // panel itself, where the browser's own Tab order would leave the modal: bring it back.
+      // Focus can end up outside (e.g. on <body> after the focused control was removed) or on
+      // something inside that is not a control (the panel, a clicked scroll area), where the
+      // browser's own Tab order could leave the modal: move to the next control in order.
       const active = document.activeElement;
-      if (active === panel || !panel.contains(active)) {
+      if (!panel.contains(active)) {
         e.preventDefault();
         (e.shiftKey ? lastEl : firstEl).focus();
+      } else if (!items.includes(active as HTMLElement)) {
+        e.preventDefault();
+        const follows = (el: HTMLElement) => !!((active as Node).compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+        const target = e.shiftKey ? ([...items].reverse().find((el) => !follows(el) && el !== active) ?? lastEl) : (items.find(follows) ?? firstEl);
+        target.focus();
       } else if (e.shiftKey && document.activeElement === firstEl) {
         e.preventDefault();
         lastEl.focus();
@@ -86,10 +93,14 @@ function useModalBehaviour(
       if (index >= 0) modalStack.splice(index, 1);
       notifyStack();
       if (modalStack.length === 0) document.body.style.overflow = '';
-      // Return focus to where it was; if that control is gone (e.g. the button that opened this
-      // dialog was removed by the action), keep focus inside the modal underneath, if any.
-      if (previouslyFocused?.isConnected) previouslyFocused.focus();
-      else modalStack[modalStack.length - 1]?.focusTarget?.focus();
+      // Return focus to where it was. If that control can no longer take it (removed or disabled
+      // by the action), keep focus inside the modal underneath, or else on the main content, so
+      // keyboard and screen-reader users do not lose their place.
+      previouslyFocused?.focus?.();
+      if (document.activeElement !== previouslyFocused || !previouslyFocused?.isConnected) {
+        const fallback = modalStack[modalStack.length - 1]?.focusTarget ?? document.querySelector<HTMLElement>('main[tabindex]');
+        fallback?.focus();
+      }
     };
   }, [open, panelRef, focusTargetRef]);
 }
@@ -179,7 +190,15 @@ export function Sheet({
             <X className="size-5" aria-hidden="true" />
           </button>
         </div>
-        <div ref={bodyRef} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 outline-none">
+        {/* A focusable, named scroll area, so the sheet can be scrolled with the keyboard even when it
+            holds no controls; it is also where focus returns when a control inside disappears. */}
+        <div
+          ref={bodyRef}
+          tabIndex={0}
+          role="region"
+          aria-labelledby={titleId}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-caramel-500"
+        >
           {children}
         </div>
         {footer ? <div className="border-t border-espresso-800/10 px-4 pb-safe pt-3">{footer}</div> : null}

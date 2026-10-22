@@ -581,3 +581,51 @@ describe('copies: choices checked against settled days, people, renames and v1 g
     expect(readCopies(storage).map((c) => c.game.seed)).toEqual([theirs.seed, 1, 2]);
   });
 });
+
+describe('copies: who made a change, and storage that stays full', () => {
+  it('a snapshot stays an earlier point when only the later copy renamed, repriced or promoted', () => {
+    const fork = playDays(newGame(), 2).state; // day 3 preparation, nothing chosen yet
+    const variants = [
+      expectOk(renameCafe(fork, 'Kafe Baru')).state,
+      expectOk(setPrice(fork, 'kopi_o', fork.products.kopi_o.priceSen + 10)).state,
+      expectOk(setPromotion(fork, 'flyers')).state,
+    ];
+    for (const later of variants) {
+      expect(isEarlierStateOf(fork, later)).toBe(true);
+      expect(isEarlierStateOf(fork, playDays(later, 2).state)).toBe(true);
+    }
+    // The copy that made the change still differs from one that did not.
+    for (const changed of variants) expect(isEarlierStateOf(changed, playDays(fork, 2).state)).toBe(false);
+  });
+
+  it('can ignore choices when the earlier copy is known to have made none', () => {
+    const fork = playDays(newGame(), 2).state;
+    const later = expectOk(setPrice(fork, 'latte', 900)).state;
+    expect(isEarlierStateOf(later, fork)).toBe(false);
+    expect(isEarlierStateOf(fork, later, false)).toBe(true);
+    // A different line of play is still different.
+    expect(isEarlierStateOf(playDays(fork, 2, 15).state, playDays(fork, 3, 40).state, false)).toBe(false);
+  });
+
+  it('never lets an unplayed game win over a played one, bankrupt or not', () => {
+    const bankrupt = { ...playDays(newGame(41), 3).state, status: 'bankrupt' as const };
+    expect(resolveOldBuildWrite(bankrupt, newGame(42))).toBe('ours');
+  });
+
+  it('puts kept copies back when dropping them could not make room for the save', () => {
+    const copies = createMemoryStorage();
+    for (const seed of [1, 2]) keepCopy(copies, playDays(newGame(seed), 2).state);
+    const copiesText = copies.getItem(COPIES_KEY) ?? '';
+    const data = new Map<string, string>([[COPIES_KEY, copiesText]]);
+    const limited: StorageLike = {
+      getItem: (k) => data.get(k) ?? null,
+      setItem: (k, v) => {
+        if (k === SAVE_KEY && v.length > 1_000) throw new Error('QuotaExceededError'); // never fits
+        data.set(k, v);
+      },
+      removeItem: (k) => void data.delete(k),
+    };
+    expect(saveGame(limited, playDays(newGame(), 3).state).ok).toBe(false);
+    expect(data.get(COPIES_KEY)).toBe(copiesText);
+  });
+});

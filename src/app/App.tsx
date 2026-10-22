@@ -77,7 +77,8 @@ function Shell() {
   return (
     <div className="mx-auto min-h-dvh w-full max-w-md">
       <AppHeader onOpenSettings={() => setSettingsOpen(true)} />
-      <main className="space-y-4 px-4 pb-[calc(104px+env(safe-area-inset-bottom,0px))] pt-3">
+      {/* Focusable only from script: focus lands here when the control a dialog came from is gone. */}
+      <main tabIndex={-1} className="space-y-4 px-4 pb-[calc(104px+env(safe-area-inset-bottom,0px))] pt-3 outline-none">
         <GlobalNotices onOpenSettings={() => setSettingsOpen(true)} />
         {tab === 'utama' && <DashboardScreen />}
         {tab === 'operasi' && <OperationsScreen />}

@@ -163,8 +163,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         });
         return false;
       }
-      // Unchanged since it was read from the old build's own save, ours is part of that tab's line.
-      if (ours !== fromOldSaveRef.current && !isUntouched(ours) && !isEarlierStateOf(ours, theirs)) {
+      // Unchanged since it was read from the old build's own save, ours made no choices of its own;
+      // if theirs carries on from it, ours is just a point on that tab's line of play.
+      const continuedByTheirs = isEarlierStateOf(ours, theirs, ours !== fromOldSaveRef.current);
+      if (!isUntouched(ours) && !continuedByTheirs) {
         ourCopy = keepCopy(storage, ours, new Date(), theirs)
           ? ` Permainan tab ini sebelumnya (${ours.cafeName}, Hari ${ours.day}) disimpan dan boleh dipulihkan dalam Tetapan.`
           : ` Permainan tab ini sebelumnya (${ours.cafeName}, Hari ${ours.day}) tidak dapat disimpan.`;

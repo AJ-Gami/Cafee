@@ -16,7 +16,8 @@
  *       `loanProceedsSen`, `loanPrincipalRepaidSen`, `openingDebtSen`,
  *       `closingDebtSen` and `expenses.interestSen`.
  */
-import { MAX_PRICE_SEN, MAX_STOCK_PER_PRODUCT, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
+import { DEFAULT_CAFE_NAME, MAX_PRICE_SEN, MAX_STOCK_PER_PRODUCT, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
+import { PRODUCTS } from './data/products';
 import { UPGRADES } from './data/upgrades';
 import { PROMOTIONS } from './data/promotions';
 import { createNewGame, hiringLabel, sanitizeCafeName, wagesLabelPrefix } from './engine';
@@ -311,12 +312,33 @@ function startsWith(list: readonly unknown[], prefix: readonly unknown[]): boole
  * `later` lacks were let go by `later` afterwards; had `earlier` hired them instead, its own
  * transactions would not be a prefix of `later`'s.
  */
-function laterOnlyContinued(earlier: GameState, later: GameState): boolean {
-  if (earlier.cafeName !== later.cafeName || earlier.promotion !== later.promotion) return false;
-  const sameMenu = PRODUCT_IDS.every(
-    (id) => earlier.products[id].priceSen === later.products[id].priceSen && earlier.products[id].enabled === later.products[id].enabled,
-  );
-  if (!sameMenu) return false;
+/**
+ * Choices with no transaction that `g` made itself on its current day, compared with how the day
+ * started: every day starts without a promotion, with the prices and name the previous day was
+ * settled with (the defaults on day 1). A difference elsewhere was made by the other copy. (The
+ * menu's on/off switches are not recorded per day, so they cannot be told apart and are not compared.)
+ */
+function ownChoices(g: GameState): { renamed: boolean; promoted: boolean; repriced: ProductId[] } {
+  const start = g.history.find((r) => r.day === g.day - 1);
+  const startName = start ? start.cafeName : g.day === 1 ? DEFAULT_CAFE_NAME : g.cafeName;
+  const startDiscountBps = start ? PROMOTIONS[start.promotionId].discountBps : 0;
+  const repriced = PRODUCT_IDS.filter((id) => {
+    const price = g.products[id].priceSen;
+    if (start) {
+      const line = start.products.find((l) => l.productId === id);
+      return !!line && line.salePriceSen !== price - applyBps(price, startDiscountBps);
+    }
+    return g.day === 1 && price !== PRODUCTS[id].defaultPriceSen;
+  });
+  return { renamed: g.cafeName !== startName, promoted: g.promotion !== 'none', repriced };
+}
+
+function laterOnlyContinued(earlier: GameState, later: GameState, checkChoices: boolean): boolean {
+  if (!checkChoices) return true;
+  const own = ownChoices(earlier);
+  if (own.renamed && later.cafeName !== earlier.cafeName) return false;
+  if (own.promoted && later.promotion !== earlier.promotion) return false;
+  if (own.repriced.some((id) => later.products[id].priceSen !== earlier.products[id].priceSen)) return false;
   // Each newcomer needs their own hiring transaction after `earlier`'s.
   const hiresAfter = later.dayTransactions.slice(earlier.dayTransactions.length).filter((t) => t.type === 'hiring').map((t) => t.label);
   const earlierStaff = new Set(earlier.staff.map((s) => s.id));
@@ -335,14 +357,17 @@ function laterOnlyContinued(earlier: GameState, later: GameState): boolean {
  * transaction, as that day's report shows them, are `earlier`'s (name, promotion, prices), and
  * nobody `earlier` let go that day was still paid by `later` that day.
  */
-function settledWithSameChoices(earlier: GameState, report: DayReport): boolean {
-  if (report.cafeName !== earlier.cafeName) return false;
+function settledWithSameChoices(earlier: GameState, report: DayReport, checkChoices: boolean): boolean {
+  if (!checkChoices) return true;
+  const own = ownChoices(earlier);
+  if (own.renamed && report.cafeName !== earlier.cafeName) return false;
   // A promotion skipped for lack of cash is reported as none, so the choice cannot be checked.
-  if (!report.promotionSkipped && report.promotionId !== earlier.promotion) return false;
+  if (own.promoted && !report.promotionSkipped && report.promotionId !== earlier.promotion) return false;
   const discountBps = PROMOTIONS[report.promotionId].discountBps;
-  const samePrices = report.products.every((line) => {
-    const p = earlier.products[line.productId];
-    return line.salePriceSen === p.priceSen - applyBps(p.priceSen, discountBps);
+  const samePrices = own.repriced.every((id) => {
+    const line = report.products.find((l) => l.productId === id);
+    const price = earlier.products[id].priceSen;
+    return !!line && line.salePriceSen === price - applyBps(price, discountBps);
   });
   if (!samePrices) return false;
   const hiringPrefix = hiringLabel('');
@@ -376,7 +401,12 @@ function sameStartingPoint(earlier: GameState, later: GameState): boolean {
  * missing from `later`), so discarding it loses no play. False for a different game or a
  * diverging branch, including when the history needed to tell has been trimmed.
  */
-export function isEarlierStateOf(earlier: GameState, later: GameState): boolean {
+export function isEarlierStateOf(
+  earlier: GameState,
+  later: GameState,
+  /** false: ignore choices that record no transaction (when `earlier` is known to have made none). */
+  checkChoices = true,
+): boolean {
   if (earlier.seed !== later.seed || compareProgress(earlier, later) > 0) return false;
   const lastReport = earlier.history[earlier.history.length - 1];
   if (lastReport) {
@@ -387,15 +417,15 @@ export function isEarlierStateOf(earlier: GameState, later: GameState): boolean 
   }
   if (earlier.phase === 'closed') {
     // After closing, only a rename can still change: `later` must not have lost it.
-    return earlier.cafeName === lastReport?.cafeName || earlier.cafeName === later.cafeName;
+    return !checkChoices || earlier.cafeName === lastReport?.cafeName || earlier.cafeName === later.cafeName;
   }
   if (later.lastSettledDay >= earlier.day) {
     const report = later.history.find((r) => r.day === earlier.day);
     // Preparation spending comes first in that day's transactions.
-    return !!report && startsWith(report.transactions, earlier.dayTransactions) && settledWithSameChoices(earlier, report);
+    return !!report && startsWith(report.transactions, earlier.dayTransactions) && settledWithSameChoices(earlier, report, checkChoices);
   }
   // Both are preparing the same day: `later` may only have continued from `earlier`.
-  return startsWith(later.dayTransactions, earlier.dayTransactions) && laterOnlyContinued(earlier, later);
+  return startsWith(later.dayTransactions, earlier.dayTransactions) && laterOnlyContinued(earlier, later, checkChoices);
 }
 
 /**
@@ -407,8 +437,9 @@ export function isEarlierStateOf(earlier: GameState, later: GameState): boolean 
  */
 export function resolveOldBuildWrite(ours: GameState, theirs: GameState): 'ours' | 'theirs' {
   if (ours.seed === theirs.seed) return compareProgress(theirs, ours) >= 0 ? 'theirs' : 'ours';
-  // A game nobody has played yet holds nothing to lose.
+  // A game nobody has played yet holds nothing to lose, and never wins over one that was played.
   if (isUntouched(ours) && !isUntouched(theirs)) return 'theirs';
+  if (isUntouched(theirs) && !isUntouched(ours)) return 'ours';
   if (ours.status !== 'active' && theirs.status === 'active') return 'theirs';
   return 'ours';
 }
@@ -636,13 +667,28 @@ export function saveGame(
   // Key order matters: saveId must precede game so peekSaveId can find it cheaply.
   const envelope: SaveEnvelope = { schemaVersion: SAVE_SCHEMA_VERSION, savedAt: now.toISOString(), saveId, game };
   const text = JSON.stringify(envelope);
+  let copiesBefore: string | null = null;
+  try {
+    copiesBefore = storage.getItem(COPIES_KEY);
+  } catch {
+    copiesBefore = null;
+  }
   for (;;) {
     try {
       storage.setItem(SAVE_KEY, text);
       return { ok: true, savedAt: envelope.savedAt, saveId };
     } catch {
       // The current game matters more than kept copies: make room by dropping the oldest one.
-      if (!dropOldestCopy(storage)) return { ok: false, error: 'Gagal menyimpan — storan pelayar mungkin penuh atau disekat.' };
+      if (dropOldestCopy(storage)) continue;
+      // Dropping them did not make room after all: put them back rather than lose them for nothing.
+      if (copiesBefore !== null) {
+        try {
+          storage.setItem(COPIES_KEY, copiesBefore);
+        } catch {
+          // Nothing more can be done.
+        }
+      }
+      return { ok: false, error: 'Gagal menyimpan — storan pelayar mungkin penuh atau disekat.' };
     }
   }
 }
