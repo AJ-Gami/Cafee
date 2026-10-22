@@ -21,11 +21,14 @@
  *   v5: upgrades become depreciated fixed assets — `game.assets`,
  *       `dayStart.assetsSen`, and per-report `expenses.depreciationSen`,
  *       `openingAssetsSen` and `closingAssetsSen`.
- *   v6 (current): stock is held per ingredient — `game.ingredients` replaces
+ *   v6: stock is held per ingredient — `game.ingredients` replaces
  *       each product's `unitCostSen`, `stock` and `stockValueSen`; stock
  *       purchases name an `ingredientId`; reports gain `ingredients` lines
  *       (null on older reports, whose product lines keep their spoilage and
  *       closing stock).
+ *   v7 (current): a second branch — `game.branch`, `game.pendingWriteOffSen`,
+ *       `stats.branchesOpened`, the `branch_setup` transaction type, and
+ *       per-report `branch` and `expenses.writeOffSen`.
  */
 import { DEFAULT_CAFE_NAME, MAX_PRICE_SEN, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
 import { INGREDIENTS } from './data/ingredients';
@@ -353,6 +356,23 @@ function migrateV5toV6(v5: unknown): unknown {
   };
 }
 
+/** v6 -> v7: no café had a branch, so nothing was opened, closed or written off. */
+function migrateV6toV7(v6: unknown): unknown {
+  if (!isObj(v6)) return v6;
+  return {
+    ...v6,
+    schemaVersion: 7,
+    branch: null,
+    pendingWriteOffSen: 0,
+    stats: isObj(v6.stats) ? { ...v6.stats, branchesOpened: 0 } : v6.stats,
+    history: Array.isArray(v6.history)
+      ? v6.history.map((r: unknown) =>
+          isObj(r) ? { ...r, branch: null, expenses: isObj(r.expenses) ? { ...r.expenses, writeOffSen: 0 } : r.expenses } : r,
+        )
+      : v6.history,
+  };
+}
+
 export type MigrationResult =
   | { ok: true; game: unknown; fromVersion: number }
   /** `newer`: written by a newer version of the game, so this build must not touch it. */
@@ -398,6 +418,10 @@ export function migrateSave(raw: unknown): MigrationResult {
   if (version === 5) {
     game = migrateV5toV6(game);
     version = 6;
+  }
+  if (version === 6) {
+    game = migrateV6toV7(game);
+    version = 7;
   }
   if (version !== SAVE_SCHEMA_VERSION) return { ok: false, error: 'Migrasi simpanan tidak lengkap.' };
   return { ok: true, game, fromVersion };

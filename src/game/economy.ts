@@ -5,18 +5,20 @@
  * (COGS) when a product made from them is sold (or is written off as spoilage).
  */
 import {
+  BRANCH_BARISTA_WAGE_SEN,
   BULK_DISCOUNTS,
   RENT_SEN_PER_DAY,
   UTILITIES_BASE_SEN,
   UTILITIES_PER_CUSTOMER_SEN,
 } from './constants';
+import { BRANCH_LOCATIONS } from './data/branches';
 import { INGREDIENTS } from './data/ingredients';
 import { PRODUCTS } from './data/products';
 import { UPGRADES } from './data/upgrades';
 import { resolveEvent } from './events';
 import { installmentDue } from './loans';
 import { applyBps, mulDivRound, sumSen } from './money';
-import type { GameState, IngredientId, IngredientState, ProductId, StaffMember, UpgradeId } from './types';
+import type { BranchState, GameState, IngredientId, IngredientState, ProductId, StaffMember, UpgradeId } from './types';
 import { INGREDIENT_IDS } from './types';
 
 export interface PurchaseQuote {
@@ -150,20 +152,34 @@ export function dailyUtilities(upgrades: readonly UpgradeId[], customersServed: 
   return UTILITIES_BASE_SEN + extra + UTILITIES_PER_CUSTOMER_SEN * Math.max(0, customersServed);
 }
 
+/** Payments the branch makes at every close, before the per-customer part of utilities. */
+export function branchFixedCosts(branch: BranchState): { wagesSen: number; rentSen: number; utilitiesBaseSen: number } {
+  const loc = BRANCH_LOCATIONS[branch.location];
+  return { wagesSen: branch.baristas * BRANCH_BARISTA_WAGE_SEN, rentSen: loc.rentSen, utilitiesBaseSen: loc.utilitiesBaseSen };
+}
+
+export function branchUtilities(branch: BranchState, served: number): number {
+  return BRANCH_LOCATIONS[branch.location].utilitiesBaseSen + UTILITIES_PER_CUSTOMER_SEN * Math.max(0, served);
+}
+
 /**
  * Fixed payments known before opening, all charged at today's close: wages, rent, base utilities
- * (excluding the per-customer part) and any loan installment due.
+ * (excluding the per-customer part), the branch's own (all three together) and any loan
+ * installment due.
  */
 export function projectedFixedCosts(state: GameState): {
   wagesSen: number;
   rentSen: number;
   utilitiesBaseSen: number;
+  branchSen: number;
   loanSen: number;
   totalSen: number;
 } {
   const wagesSen = dailyWages(state.staff);
   const rentSen = dailyRent();
   const utilitiesBaseSen = dailyUtilities(state.upgrades, 0);
+  const branch = state.branch ? branchFixedCosts(state.branch) : null;
+  const branchSen = branch ? branch.wagesSen + branch.rentSen + branch.utilitiesBaseSen : 0;
   const loanSen = installmentDue(state.loan, state.day)?.totalSen ?? 0;
-  return { wagesSen, rentSen, utilitiesBaseSen, loanSen, totalSen: wagesSen + rentSen + utilitiesBaseSen + loanSen };
+  return { wagesSen, rentSen, utilitiesBaseSen, branchSen, loanSen, totalSen: wagesSen + rentSen + utilitiesBaseSen + branchSen + loanSen };
 }

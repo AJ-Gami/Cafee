@@ -86,9 +86,9 @@ export function reconcileReport(report: DayReport): Reconciliation {
     },
     {
       id: 'other',
-      label: 'Lain-lain = pengambilan + kos peristiwa + pembaziran + faedah',
+      label: 'Lain-lain = pengambilan + kos peristiwa + pembaziran + faedah + hapus kira',
       expectedSen: e.otherSen,
-      actualSen: e.hiringSen + e.eventCostSen + lineSpoilage + e.interestSen,
+      actualSen: e.hiringSen + e.eventCostSen + lineSpoilage + e.interestSen + e.writeOffSen,
     },
     {
       id: 'net',
@@ -116,17 +116,18 @@ export function reconcileReport(report: DayReport): Reconciliation {
     },
     {
       id: 'assets',
-      label: 'Aset tetap awal + pelaburan − susut nilai = aset tetap akhir',
+      label: 'Aset tetap awal + pelaburan − susut nilai − hapus kira = aset tetap akhir',
       expectedSen: report.closingAssetsSen,
-      actualSen: report.openingAssetsSen + report.capexSen - e.depreciationSen,
+      actualSen: report.openingAssetsSen + report.capexSen - e.depreciationSen - e.writeOffSen,
     },
     {
       id: 'bridge',
-      label: 'Untung bersih + susut nilai − kenaikan inventori − pelaburan + pinjaman bersih = perubahan tunai',
+      label: 'Untung bersih + susut nilai + hapus kira − kenaikan inventori − pelaburan + pinjaman bersih = perubahan tunai',
       expectedSen: report.closingCashSen - report.openingCashSen,
       actualSen:
         report.netProfitSen +
-        e.depreciationSen -
+        e.depreciationSen +
+        e.writeOffSen -
         (report.closingInventorySen - report.openingInventorySen) -
         report.capexSen +
         report.loanProceedsSen -
@@ -162,13 +163,18 @@ export function cashFlowSummary(report: DayReport): CashFlowSummary {
   };
 }
 
+/** Customers served across the business that day (the main café and the branch). */
+export function servedTotal(report: DayReport): number {
+  return report.customers.served + (report.branch?.customers.served ?? 0);
+}
+
 /** Plain-text summary for sharing. Clearly labelled as simulated game data. */
 export function shareText(report: DayReport, formatMoney: (sen: number) => string): string {
   return [
     `☕ ${report.cafeName} — Hari ${report.day}`,
     `Jualan: ${formatMoney(report.revenueSen)}`,
     `Untung bersih: ${formatMoney(report.netProfitSen)}`,
-    `Pelanggan dilayan: ${report.customers.served}`,
+    `Pelanggan dilayan: ${servedTotal(report)}`,
     `Reputasi: ${reputationPoints(report.reputationAfter)}/100`,
     ...(report.goal ? [`${GOAL_TITLE[report.goal.kind]} ${formatMoney(report.goal.targetSen)}: ${report.goal.achieved ? 'dicapai' : 'tidak dicapai'}`] : []),
     '',
@@ -193,20 +199,24 @@ export function historySeries(history: readonly DayReport[], count: number): His
     revenueSen: r.revenueSen,
     netProfitSen: r.netProfitSen,
     closingCashSen: r.closingCashSen,
-    served: r.customers.served,
+    served: servedTotal(r),
   }));
 }
 
-/** Running totals by hour for the live day playback. */
-export function cumulativeByHour(report: DayReport): { hour: number; served: number; revenueSen: number; lost: number }[] {
+/** Running totals by hour for the live day playback (the main café's, plus the branch's revenue). */
+export function cumulativeByHour(
+  report: DayReport,
+): { hour: number; served: number; revenueSen: number; lost: number; branchRevenueSen: number }[] {
   let served = 0;
   let revenueSen = 0;
   let lost = 0;
-  return report.hourly.map((h) => {
+  let branchRevenueSen = 0;
+  return report.hourly.map((h, i) => {
     served += h.served;
     revenueSen += h.revenueSen;
     lost += h.lostCapacity + h.lostStock + h.lostPrice + h.lostClosed;
-    return { hour: h.hour, served, revenueSen, lost };
+    branchRevenueSen += report.branch?.hourlyRevenueSen[i] ?? 0;
+    return { hour: h.hour, served, revenueSen, lost, branchRevenueSen };
   });
 }
 
@@ -278,7 +288,9 @@ function summarizeWeek(week: number, days: readonly DayReport[], latestDay: numb
   const first = days[0] as DayReport;
   const last = days[days.length - 1] as DayReport;
   const total = (pick: (r: DayReport) => number): number => sumSen(days.map(pick));
-  const served = days.reduce((n, r) => n + r.customers.served, 0);
+  // Customers served at the main café and the branch; the service rate is the main café's.
+  const served = days.reduce((n, r) => n + servedTotal(r), 0);
+  const mainServed = days.reduce((n, r) => n + r.customers.served, 0);
   const willing = days.reduce((n, r) => n + r.customers.served + r.customers.lostCapacity + r.customers.lostStock + r.customers.lostClosed, 0);
   const best = days.reduce((a, b) => (b.revenueSen > a.revenueSen ? b : a));
   return {
@@ -306,8 +318,8 @@ function summarizeWeek(week: number, days: readonly DayReport[], latestDay: numb
     openingCashSen: first.openingCashSen,
     closingCashSen: last.closingCashSen,
     served,
-    arrivals: days.reduce((n, r) => n + r.customers.arrivals, 0),
-    serviceRate: willing === 0 ? 1 : served / willing,
+    arrivals: days.reduce((n, r) => n + r.customers.arrivals + (r.branch?.customers.arrivals ?? 0), 0),
+    serviceRate: willing === 0 ? 1 : mainServed / willing,
     profitableDays: days.filter((r) => r.netProfitSen > 0).length,
     bestDay: { day: best.day, revenueSen: best.revenueSen },
     reputationStart: first.reputationBefore,

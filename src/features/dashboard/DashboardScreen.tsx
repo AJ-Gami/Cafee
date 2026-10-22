@@ -15,7 +15,7 @@ import { reputationPoints, weekdayName } from '../../game/demand';
 import { remainingPrincipal } from '../../game/loans';
 import { formatRM } from '../../game/money';
 import { levelInfo } from '../../game/objectives';
-import { historySeries } from '../../game/reports';
+import { historySeries, servedTotal } from '../../game/reports';
 import { capacityView, currentInventoryValue, dayEstimate, ingredientViews, lastReport, objectiveViews, visibleTodayEvent } from '../../game/selectors';
 import { ProfitMiniChart } from '../finance/LazyCharts';
 import { GoalCard } from '../operations/GoalCard';
@@ -113,7 +113,7 @@ export function DashboardScreen() {
           label={report ? `Jualan H${report.day}` : 'Jualan harian'}
           icon={<ShoppingCart className="size-3.5" aria-hidden="true" />}
           value={report ? <Money sen={report.revenueSen} tabular={false} /> : '—'}
-          hint={report ? `${report.customers.served} pelanggan dilayan` : 'Belum dibuka'}
+          hint={report ? `${servedTotal(report)} pelanggan dilayan` : 'Belum dibuka'}
         />
         <Stat
           label={report ? `Untung H${report.day}` : 'Untung bersih'}

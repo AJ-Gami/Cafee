@@ -5,7 +5,7 @@ import { EVENTS } from '../../game/data/events';
 import { percentPoints, reputationPoints, weekdayName } from '../../game/demand';
 import { GOAL_TITLE, goalShortfallSen } from '../../game/goals';
 import { formatRM } from '../../game/money';
-import { shareText } from '../../game/reports';
+import { servedTotal, shareText } from '../../game/reports';
 import type { DayReport } from '../../game/types';
 import { renderShareImage } from './shareImage';
 import { ShareActions } from './ShareActions';
@@ -46,7 +46,7 @@ export function ResultCard({ report }: { report: DayReport }) {
             <dt className="flex items-center gap-1 text-[11px] font-semibold uppercase text-espresso-600">
               <Users className="size-3" aria-hidden="true" /> Dilayan
             </dt>
-            <dd className="mt-0.5 text-lg font-semibold">{report.customers.served} pelanggan</dd>
+            <dd className="mt-0.5 text-lg font-semibold">{servedTotal(report)} pelanggan</dd>
           </div>
           <div className="rounded-xl bg-cream-100 p-2.5">
             <dt className="flex items-center gap-1 text-[11px] font-semibold uppercase text-espresso-600">

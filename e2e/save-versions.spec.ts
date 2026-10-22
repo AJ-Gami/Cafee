@@ -58,29 +58,39 @@ type Loose = Record<string, any>;
 
 /**
  * Write `game` as an older build would: schema `version`, without the fields later versions added.
- * Before v6, stock was held per product: ingredient stock is moved onto products keeping its value
+ * Before v7 there was no branch. Before v6, stock was held per product: ingredient stock is moved onto products keeping its value
  * (milk and tea as teh ais), and reports carry their spoilage on product lines. Transactions are
  * kept as they are, so the same play compares equal in both builds.
  */
-async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string, version: 2 | 3 | 4 | 5 = 2): Promise<void> {
+async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string, version: 2 | 3 | 4 | 5 | 6 = 2): Promise<void> {
   const g = structuredClone(game) as unknown as Loose;
   g.schemaVersion = version;
-  // Added in v6 (ingredient stock).
-  const ing = g.ingredients as Record<'kopi' | 'susu' | 'teh' | 'pastri', { stock: number; stockValueSen: number }>;
-  delete g.ingredients;
-  for (const id of Object.keys(g.products)) g.products[id] = { ...g.products[id], unitCostSen: 100, stock: 0, stockValueSen: 0 };
-  Object.assign(g.products.kopi_o, { stock: ing.kopi.stock, stockValueSen: ing.kopi.stockValueSen });
-  Object.assign(g.products.teh_ais, { stock: Math.min(ing.susu.stock, ing.teh.stock), stockValueSen: ing.susu.stockValueSen + ing.teh.stockValueSen });
-  Object.assign(g.products.croissant, { stock: ing.pastri.stock, stockValueSen: ing.pastri.stockValueSen });
-  const legacyProduct: Record<string, string> = { kopi: 'kopi_o', susu: 'teh_ais', teh: 'teh_ais', pastri: 'croissant' };
+  // Added in v7 (a second branch). These tests open no branch.
+  delete g.branch;
+  delete g.pendingWriteOffSen;
+  delete g.stats.branchesOpened;
   for (const r of g.history as Loose[]) {
-    for (const line of r.products as Loose[]) Object.assign(line, { spoiledUnits: 0, spoiledValueSen: 0, closingStock: 0 });
-    for (const l of r.ingredients as Loose[]) {
-      const line = (r.products as Loose[]).find((p) => p.productId === legacyProduct[l.ingredientId]);
-      line!.spoiledUnits += l.spoiled;
-      line!.spoiledValueSen += l.spoiledValueSen;
+    delete r.branch;
+    delete r.expenses.writeOffSen;
+  }
+  if (version <= 5) {
+    // Added in v6 (ingredient stock).
+    const ing = g.ingredients as Record<'kopi' | 'susu' | 'teh' | 'pastri', { stock: number; stockValueSen: number }>;
+    delete g.ingredients;
+    for (const id of Object.keys(g.products)) g.products[id] = { ...g.products[id], unitCostSen: 100, stock: 0, stockValueSen: 0 };
+    Object.assign(g.products.kopi_o, { stock: ing.kopi.stock, stockValueSen: ing.kopi.stockValueSen });
+    Object.assign(g.products.teh_ais, { stock: Math.min(ing.susu.stock, ing.teh.stock), stockValueSen: ing.susu.stockValueSen + ing.teh.stockValueSen });
+    Object.assign(g.products.croissant, { stock: ing.pastri.stock, stockValueSen: ing.pastri.stockValueSen });
+    const legacyProduct: Record<string, string> = { kopi: 'kopi_o', susu: 'teh_ais', teh: 'teh_ais', pastri: 'croissant' };
+    for (const r of g.history as Loose[]) {
+      for (const line of r.products as Loose[]) Object.assign(line, { spoiledUnits: 0, spoiledValueSen: 0, closingStock: 0 });
+      for (const l of r.ingredients as Loose[]) {
+        const line = (r.products as Loose[]).find((p) => p.productId === legacyProduct[l.ingredientId]);
+        line!.spoiledUnits += l.spoiled;
+        line!.spoiledValueSen += l.spoiledValueSen;
+      }
+      delete r.ingredients;
     }
-    delete r.ingredients;
   }
   if (version <= 4) {
     // Added in v5 (fixed assets). These tests buy no upgrades, so no depreciation is in the totals.
@@ -148,7 +158,7 @@ test('an older-build tab that is behind cannot replace newer progress; a divergi
   await expect(a.getByRole('button', { name: 'Pulihkan salinan sandaran: Kopi Kita, Hari 1' })).toBeVisible();
 });
 
-for (const version of [2, 3, 4, 5] as const) {
+for (const version of [2, 3, 4, 5, 6] as const) {
   test(`progress made further ahead in an older-build tab (v${version}) is adopted, not reverted`, async ({ context }) => {
     const a = await context.newPage();
     const old = await context.newPage();
@@ -179,7 +189,9 @@ for (const version of [2, 3, 4, 5] as const) {
     expect(upgraded?.schemaVersion).toBe(SCHEMA_VERSION);
     expect(upgraded?.game).toMatchObject({ day: 2, goal: null, assets: [], dayStart: { assetsSen: 0 }, stats: { goalsMet: 0 } });
     expect(upgraded?.game.ingredients.kopi.stock).toBeGreaterThan(0);
-    expect((upgraded?.game.history[0] as Loose | undefined)?.ingredients).toBeNull();
+    // Reports from before ingredient stock keep their per-product lines.
+    expect((upgraded?.game.history[0] as Loose | undefined)?.ingredients === null).toBe(version <= 5);
+    expect(upgraded?.game).toMatchObject({ branch: null, pendingWriteOffSen: 0 });
   });
 }
 

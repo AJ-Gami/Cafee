@@ -18,6 +18,7 @@ export const RNG_PURPOSE = {
   event: 101,
   demand: 202,
   candidates: 303,
+  branch: 404,
 } as const;
 
 /** Mix integers into a well-distributed 32-bit seed. */

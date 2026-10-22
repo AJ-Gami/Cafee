@@ -1,4 +1,4 @@
-import { BadgeCheck, CircleAlert, Clock, Package, Receipt, Scale, Sparkles, Target, Users } from 'lucide-react';
+import { BadgeCheck, CircleAlert, Clock, Package, Receipt, Scale, Sparkles, Store, Target, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Badge, type Tone } from '../../components/Badge';
 import { Card, CardTitle, Row } from '../../components/Card';
@@ -6,6 +6,7 @@ import { IngredientIcon } from '../../components/IngredientIcon';
 import { Money } from '../../components/Money';
 import { ProductIcon } from '../../components/ProductIcon';
 import { ProgressBar } from '../../components/ProgressBar';
+import { BRANCH_LOCATIONS } from '../../game/data/branches';
 import { EVENTS } from '../../game/data/events';
 import { INGREDIENTS } from '../../game/data/ingredients';
 import { PRODUCTS } from '../../game/data/products';
@@ -13,7 +14,7 @@ import { PROMOTIONS } from '../../game/data/promotions';
 import { formatHour, percentPoints } from '../../game/demand';
 import { objectiveDef } from '../../game/objectives';
 import { cashFlowSummary, reconcileReport, type WeeklySummary } from '../../game/reports';
-import type { DayReport, TimelineTone, TransactionType } from '../../game/types';
+import type { BranchDayResult, DayReport, TimelineTone, TransactionType } from '../../game/types';
 import { ResultCard } from './ResultCard';
 import { WeekSummaryCard } from './WeekSummary';
 
@@ -31,6 +32,7 @@ export const TX_LABEL: Record<TransactionType, { label: string; tone: Tone }> = 
   loan_proceeds: { label: 'Pinjaman', tone: 'info' },
   loan_interest: { label: 'Faedah', tone: 'bad' },
   loan_principal: { label: 'Bayar pinjaman', tone: 'neutral' },
+  branch_setup: { label: 'Cawangan', tone: 'info' },
 };
 
 const TONE_DOT: Record<TimelineTone, string> = {
@@ -85,6 +87,8 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
 
       {week ? <WeekSummaryCard summary={week} closing /> : null}
 
+      {report.branch ? <BranchDayCard branch={report.branch} /> : null}
+
       {report.eventId ? (
         <Card>
           <CardTitle title={EVENTS[report.eventId].title} subtitle="Peristiwa hari ini" icon={<Sparkles className="size-5" />} />
@@ -94,7 +98,11 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
       ) : null}
 
       <Card>
-        <CardTitle title="Untung & rugi" subtitle="Penyata pendapatan hari ini" icon={<Receipt className="size-5" />} />
+        <CardTitle
+          title="Untung & rugi"
+          subtitle={report.branch ? 'Penyata pendapatan hari ini (kafe utama dan cawangan)' : 'Penyata pendapatan hari ini'}
+          icon={<Receipt className="size-5" />}
+        />
         <dl className="divide-y divide-espresso-800/[0.07]">
           <Row label="Hasil jualan" value={<Money sen={report.revenueSen} />} />
           {report.otherIncomeSen > 0 ? <Row label="Pendapatan lain" value={<Money sen={report.otherIncomeSen} />} /> : null}
@@ -110,6 +118,7 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
           {e.eventCostSen > 0 ? <Row indent muted label="Kos peristiwa" value={<Money sen={-e.eventCostSen} />} /> : null}
           {e.spoilageSen > 0 ? <Row indent muted label="Pembaziran stok rosak" value={<Money sen={-e.spoilageSen} />} /> : null}
           {e.interestSen > 0 ? <Row indent muted label="Faedah pinjaman" value={<Money sen={-e.interestSen} />} /> : null}
+          {e.writeOffSen > 0 ? <Row indent muted label="Hapus kira cawangan ditutup" value={<Money sen={-e.writeOffSen} />} /> : null}
           <Row label="Jumlah perbelanjaan" value={<Money sen={-report.totalExpensesSen} />} strong />
           <Row label="Untung bersih" value={<Money sen={report.netProfitSen} colored className="text-lg" />} strong />
         </dl>
@@ -279,5 +288,31 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
         </ul>
       </Disclosure>
     </div>
+  );
+}
+
+function BranchDayCard({ branch: b }: { branch: BranchDayResult }) {
+  const def = BRANCH_LOCATIONS[b.location];
+  return (
+    <Card>
+      <CardTitle
+        title={`Cawangan ${def.shortName}`}
+        subtitle={`${b.customers.served} daripada ${b.customers.arrivals} pelanggan dilayan · ${b.baristas} barista`}
+        icon={<Store className="size-5" />}
+      />
+      <dl className="divide-y divide-espresso-800/[0.07]">
+        <Row label="Hasil jualan" value={<Money sen={b.revenueSen} />} />
+        <Row label="Kos barang dijual" value={<Money sen={-b.cogsSen} />} />
+        <Row label="Gaji" value={<Money sen={-b.wagesSen} />} />
+        <Row label="Sewa" value={<Money sen={-b.rentSen} />} />
+        <Row label="Utiliti" value={<Money sen={-b.utilitiesSen} />} />
+        <Row label="Sumbangan cawangan" value={<Money sen={b.contributionSen} colored />} strong />
+      </dl>
+      <p className="mt-2 text-sm text-espresso-600">
+        Sudah termasuk dalam jumlah syarikat di atas. Sumbangan belum ditolak susut nilai kelengkapan cawangan. Reputasi cawangan:{' '}
+        {b.reputationBefore} → {b.reputationAfter}.
+        {b.customers.lostStock > 0 ? ` ${b.customers.lostStock} pelanggan beredar kerana bahan habis — kafe utama didahulukan.` : ''}
+      </p>
+    </Card>
   );
 }

@@ -2,7 +2,8 @@
  * Read-only views over the game state for the UI. Every number the UI shows
  * (margins, estimates, quotes, capacity) comes from here or the engine.
  */
-import { MAX_PURCHASE_QTY, MAX_STOCK_PER_INGREDIENT } from './constants';
+import { BRANCH_MIN_LEVEL, MAX_PURCHASE_QTY, MAX_STOCK_PER_INGREDIENT } from './constants';
+import { BRANCH_LOCATION_ORDER, BRANCH_LOCATIONS, type BranchLocationDef } from './data/branches';
 import { EVENTS } from './data/events';
 import { INGREDIENTS } from './data/ingredients';
 import { LOAN_OFFER_ORDER, LOAN_OFFERS, type LoanOfferDef } from './data/loans';
@@ -10,7 +11,7 @@ import { OBJECTIVES } from './data/objectives';
 import { PRODUCTS } from './data/products';
 import { PROMOTION_ORDER, PROMOTIONS, type PromotionDef } from './data/promotions';
 import { UPGRADE_ORDER, UPGRADES, type UpgradeDef } from './data/upgrades';
-import { estimateDemand, modifiersForState, reputationPoints, salePrice, weekdayIndex, type DemandEstimate } from './demand';
+import { estimateDemand, modifiersForState, openHours, reputationPoints, salePrice, weekdayIndex, type DemandEstimate } from './demand';
 import {
   averageUnitCost,
   canAfford,
@@ -23,14 +24,15 @@ import {
   spoilageRate,
   todaysUnitCost,
 } from './economy';
-import { bookValue, newAsset, nextCharge, totalBookValue } from './assets';
+import { bookValue, fixedAssetsBookValue, newAsset, nextCharge } from './assets';
+import { branchEstimate, branchFixedCosts, branchHourlyCapacity, newBranch } from './branch';
 import { isEventVisibleInPrep, resolveEvent } from './events';
 import { GOAL_TITLE, goalRaisePercent } from './goals';
 import { installment, offerTotalInterest, remainingPrincipal, settlementQuote, type Installment, type SettlementQuote } from './loans';
 import { formatRM, marginPercent } from './money';
 import { currentLevel, isObjectiveComplete } from './objectives';
 import { candidatesForState, hourlyCapacity, staffSlots } from './staff';
-import type { ActiveLoan, DayGoal, DayReport, GameState, IngredientId, ProductId, StaffCandidate } from './types';
+import type { ActiveLoan, BranchDayResult, BranchState, DayGoal, DayReport, GameState, IngredientId, ProductId, StaffCandidate } from './types';
 import { INGREDIENT_IDS, PRODUCT_IDS } from './types';
 
 /** Demand estimate using only information the player can see (forecast events, not surprises). */
@@ -118,13 +120,15 @@ function recipeItems(productId: ProductId): RecipeItem[] {
   }));
 }
 
-/** Units of each ingredient today's estimated sales would use. */
+/** Units of each ingredient today's estimated sales would use, at the main café and the branch. */
 function ingredientNeeds(state: GameState): Record<IngredientId, number> {
   const estimate = dayEstimate(state);
+  const branch = branchEstimate(state);
   const need = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, 0])) as Record<IngredientId, number>;
   for (const productId of PRODUCT_IDS) {
     if (!state.products[productId].enabled) continue;
-    for (const [id, qty] of recipeOf(productId)) need[id] += estimate.perProduct[productId] * qty;
+    const units = estimate.perProduct[productId] + (branch?.perProduct[productId] ?? 0);
+    for (const [id, qty] of recipeOf(productId)) need[id] += units * qty;
   }
   return need;
 }
@@ -278,9 +282,73 @@ export function upgradeViews(state: GameState): UpgradeView[] {
   });
 }
 
-/** Book value of the café's fixed assets now. */
+/** Book value of the café's fixed assets now (upgrades and the branch fit-out). */
 export function fixedAssetsValue(state: GameState): number {
-  return totalBookValue(state.assets);
+  return fixedAssetsBookValue(state.assets, state.branch);
+}
+
+export interface BranchLocationView extends BranchLocationDef {
+  locked: boolean;
+  affordable: boolean;
+  /** Depreciation of the fit-out at each close, and the closes it lasts. */
+  dailyDepreciationSen: number;
+  lifeDays: number;
+  /** Wages (one barista), rent and base utilities at every close. */
+  dailyFixedSen: number;
+}
+
+export function branchLocationViews(state: GameState): BranchLocationView[] {
+  const level = currentLevel(state);
+  return BRANCH_LOCATION_ORDER.map((id) => {
+    const def = BRANCH_LOCATIONS[id];
+    const probe = newBranch(id, state.day);
+    const fixed = branchFixedCosts(probe);
+    return {
+      ...def,
+      locked: level < BRANCH_MIN_LEVEL,
+      affordable: def.setupCostSen <= state.cashSen,
+      dailyDepreciationSen: nextCharge(probe.fitOut),
+      lifeDays: probe.fitOut.lifeDays,
+      dailyFixedSen: fixed.wagesSen + fixed.rentSen + fixed.utilitiesBaseSen,
+    };
+  });
+}
+
+export interface BranchView {
+  def: BranchLocationDef;
+  branch: BranchState;
+  openedToday: boolean;
+  capacityPerHour: number;
+  capacityPerDay: number;
+  /** Today's estimate (prep) from what the player can see. */
+  estimatedFootfall: number;
+  fixed: { wagesSen: number; rentSen: number; utilitiesBaseSen: number };
+  bookValueSen: number;
+  dailyDepreciationSen: number;
+  daysLeft: number;
+  /** The branch's day in the latest report, if it traded that day. */
+  lastResult: (BranchDayResult & { day: number }) | null;
+}
+
+export function branchView(state: GameState): BranchView | null {
+  const branch = state.branch;
+  if (!branch) return null;
+  const est = branchEstimate(state);
+  const perHour = branchHourlyCapacity(branch);
+  const report = lastReport(state);
+  return {
+    def: BRANCH_LOCATIONS[branch.location],
+    branch,
+    openedToday: branch.openedDay === state.day,
+    capacityPerHour: perHour,
+    capacityPerDay: perHour * openHours().length,
+    estimatedFootfall: est?.footfall ?? 0,
+    fixed: branchFixedCosts(branch),
+    bookValueSen: bookValue(branch.fitOut),
+    dailyDepreciationSen: nextCharge(branch.fitOut),
+    daysLeft: branch.fitOut.lifeDays - branch.fitOut.chargedDays,
+    lastResult: report?.branch && report.day >= branch.openedDay ? { ...report.branch, day: report.day } : null,
+  };
 }
 
 export interface ObjectiveView {
@@ -402,6 +470,19 @@ export function prepChecklist(state: GameState): PrepChecklistItem[] {
     status: est.footfall > cap.perDay ? 'warn' : 'ok',
   });
 
+  const branch = branchView(state);
+  if (branch) {
+    items.push({
+      id: 'branch',
+      label: `Cawangan ${branch.def.shortName}: ${branch.branch.baristas} barista`,
+      detail:
+        branch.estimatedFootfall > branch.capacityPerDay
+          ? `Anggaran ${branch.estimatedFootfall} pelanggan melebihi kapasiti ${branch.capacityPerDay} sehari.`
+          : `Anggaran ${branch.estimatedFootfall} pelanggan, kapasiti ${branch.capacityPerDay} sehari. Bahan diambil daripada stor yang sama.`,
+      status: branch.estimatedFootfall > branch.capacityPerDay ? 'warn' : 'ok',
+    });
+  }
+
   items.push({
     id: 'promo',
     label: promo.id === 'none' ? 'Tiada promosi' : `Promosi: ${promo.name}`,
@@ -418,9 +499,7 @@ export function prepChecklist(state: GameState): PrepChecklistItem[] {
     id: 'costs',
     label: 'Bayaran tetap hari ini',
     detail:
-      fixed.loanSen > 0
-        ? `Gaji, sewa, utiliti asas & ansuran pinjaman: ${formatRM(fixed.totalSen)} dibayar semasa tutup.`
-        : `Gaji, sewa & utiliti asas: ${formatRM(fixed.totalSen)} dibayar semasa tutup.`,
+      `Gaji, sewa, utiliti asas${fixed.branchSen > 0 ? ' (termasuk cawangan)' : ''}${fixed.loanSen > 0 ? ' & ansuran pinjaman' : ''}: ${formatRM(fixed.totalSen)} dibayar semasa tutup.`,
     status: state.cashSen < fixed.totalSen ? 'warn' : 'ok',
   });
 

@@ -65,7 +65,8 @@ export type ObjectiveId =
   | 'weekend_goal'
   | 'holiday_goal'
   | 'perfect_weekend'
-  | 'goals_5';
+  | 'goals_5'
+  | 'open_branch';
 
 /** prep = preparing before opening; closed = today has been settled and its report is ready. */
 export type DayPhase = 'prep' | 'closed';
@@ -120,7 +121,9 @@ export type TransactionType =
   /** Interest part of a loan installment (an expense). */
   | 'loan_interest'
   /** Principal part of a loan installment or an early repayment (financing, not an expense). */
-  | 'loan_principal';
+  | 'loan_principal'
+  /** Fit-out of a new branch (capital spending, like an upgrade). */
+  | 'branch_setup';
 
 /** A cash movement. Positive = cash in, negative = cash out. */
 export interface Transaction {
@@ -213,8 +216,10 @@ export interface ExpenseBreakdown {
   spoilageSen: number;
   /** Interest paid on a bank loan. */
   interestSen: number;
-  /** Non-cash: the day's share of the cost of the café's fixed assets (upgrades). */
+  /** Non-cash: the day's share of the cost of the café's fixed assets (upgrades, a branch fit-out). */
   depreciationSen: number;
+  /** Non-cash, part of "other": book value written off when a branch is closed. */
+  writeOffSen: number;
 }
 
 export type GoalKind = 'weekend' | 'holiday';
@@ -282,6 +287,30 @@ export interface DayReport {
   goal: DayGoalResult | null;
   /** Stock movements per ingredient (null on reports from before ingredient stock). */
   ingredients: IngredientDayLine[] | null;
+  /**
+   * The branch's day, already included in the report's totals (revenue, COGS, expenses, product
+   * lines and transactions). `customers` and `hourly` above are the main café's only.
+   */
+  branch: BranchDayResult | null;
+}
+
+export type BranchLocationId = 'kampus' | 'pejabat' | 'mall';
+
+export interface BranchDayResult {
+  location: BranchLocationId;
+  baristas: number;
+  revenueSen: number;
+  cogsSen: number;
+  wagesSen: number;
+  rentSen: number;
+  utilitiesSen: number;
+  /** Revenue − COGS − wages − rent − utilities (before depreciation of its fit-out). */
+  contributionSen: number;
+  customers: CustomerSummary;
+  /** Revenue in each opening hour (for the replay). */
+  hourlyRevenueSen: number[];
+  reputationBefore: number;
+  reputationAfter: number;
 }
 
 export interface GameStats {
@@ -302,6 +331,8 @@ export interface GameStats {
   holidayGoalsMet: number;
   /** Weeks in which both the Saturday and the Sunday goal were met. */
   perfectWeekends: number;
+  /** Branches that traded at least one day (including any later closed). */
+  branchesOpened: number;
 }
 
 export interface CompletedObjective {
@@ -361,17 +392,35 @@ export interface GameState {
   goal: DayGoal | null;
   /** Fixed assets: one per upgrade owned, in the order bought. */
   assets: FixedAsset[];
+  /** The second branch, if one is open. It shares the menu, prices, promotion and ingredient stock. */
+  branch: BranchState | null;
+  /** Book value of a branch closed during today's preparation, written off at today's close. */
+  pendingWriteOffSen: number;
 }
 
-/** An upgrade carried at cost and depreciated straight-line, one charge at each close. */
-export interface FixedAsset {
-  upgradeId: UpgradeId;
+export interface BranchState {
+  location: BranchLocationId;
+  openedDay: number;
+  /** 0..100, one decimal place; the branch builds its own reputation. */
+  reputation: number;
+  baristas: number;
+  /** The fit-out, depreciated like an upgrade. */
+  fitOut: DepreciatingCost;
+}
+
+/** A cost carried as a fixed asset and depreciated straight-line, one charge at each close. */
+export interface DepreciatingCost {
   costSen: number;
   lifeDays: number;
   /** Day it was bought; its first charge is at that day's close. */
   acquiredDay: number;
   /** Daily charges taken so far (at most lifeDays). */
   chargedDays: number;
+}
+
+/** An upgrade carried at cost and depreciated straight-line. */
+export interface FixedAsset extends DepreciatingCost {
+  upgradeId: UpgradeId;
 }
 
 export type LoanOfferId = 'mikro' | 'perniagaan' | 'pengembangan';
@@ -405,7 +454,9 @@ export type EngineErrorCode =
   | 'GAME_OVER'
   | 'NO_CHANGE'
   | 'LOAN_ACTIVE'
-  | 'NO_LOAN';
+  | 'NO_LOAN'
+  | 'BRANCH_EXISTS'
+  | 'NO_BRANCH';
 
 export type EngineResult =
   | { ok: true; state: GameState; message: string; report?: DayReport; newObjectives?: ObjectiveId[] }

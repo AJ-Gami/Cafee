@@ -6,14 +6,17 @@
  */
 import {
   buyUpgrade,
+  closeBranch,
   createNewGame,
   fireStaff,
   hireStaff,
+  openBranch,
   openCafe,
   purchaseStock,
   purchaseStockBatch,
   renameCafe,
   repayLoan,
+  setBranchBaristas,
   setPrice,
   setProductEnabled,
   setPromotion,
@@ -21,6 +24,7 @@ import {
   takeLoan,
 } from './engine';
 import type {
+  BranchLocationId,
   EngineErrorCode,
   EngineResult,
   GameState,
@@ -42,6 +46,9 @@ export type GameAction =
   | { type: 'FIRE'; staffId: string }
   | { type: 'BUY_UPGRADE'; upgradeId: UpgradeId }
   | { type: 'TAKE_LOAN'; offerId: LoanOfferId }
+  | { type: 'OPEN_BRANCH'; location: BranchLocationId }
+  | { type: 'SET_BRANCH_BARISTAS'; baristas: number }
+  | { type: 'CLOSE_BRANCH' }
   | { type: 'REPAY_LOAN' }
   | { type: 'OPEN_CAFE'; day: number }
   | { type: 'START_NEXT_DAY'; day: number }
@@ -111,6 +118,12 @@ export function gameReducer(store: GameStore, action: GameAction): GameStore {
       return apply(store, buyUpgrade(g, action.upgradeId));
     case 'TAKE_LOAN':
       return apply(store, takeLoan(g, action.offerId));
+    case 'OPEN_BRANCH':
+      return apply(store, openBranch(g, action.location));
+    case 'SET_BRANCH_BARISTAS':
+      return apply(store, setBranchBaristas(g, action.baristas));
+    case 'CLOSE_BRANCH':
+      return apply(store, closeBranch(g));
     case 'REPAY_LOAN':
       return apply(store, repayLoan(g));
     case 'OPEN_CAFE': {

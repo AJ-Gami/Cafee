@@ -1,12 +1,12 @@
 /**
- * Fixed assets. Upgrades are capital spending: cash leaves when one is bought, and its cost
- * reaches the P&L as straight-line depreciation, one equal charge at each close (the last charge
- * absorbs the rounding), starting with the close of the day it was bought.
+ * Fixed assets. Upgrades and a branch fit-out are capital spending: cash leaves when one is
+ * bought, and its cost reaches the P&L as straight-line depreciation, one equal charge at each
+ * close (the last charge absorbs the rounding), starting with the close of the day it was bought.
  */
 import { ASSET_LIFE_DAYS } from './constants';
 import { UPGRADES } from './data/upgrades';
 import { sumSen } from './money';
-import type { FixedAsset, UpgradeId } from './types';
+import type { BranchState, DepreciatingCost, FixedAsset, UpgradeId } from './types';
 
 export function newAsset(upgradeId: UpgradeId, day: number): FixedAsset {
   return { upgradeId, costSen: UPGRADES[upgradeId].costSen, lifeDays: ASSET_LIFE_DAYS, acquiredDay: day, chargedDays: 0 };
@@ -26,26 +26,37 @@ export function accumulatedDepreciation(asset: Pick<FixedAsset, 'costSen' | 'lif
   return Math.floor(asset.costSen / asset.lifeDays) * charges;
 }
 
-export function bookValue(asset: FixedAsset): number {
+export function bookValue(asset: DepreciatingCost): number {
   return asset.costSen - accumulatedDepreciation(asset, asset.chargedDays);
 }
 
-export function totalBookValue(assets: readonly FixedAsset[]): number {
+export function totalBookValue(assets: readonly DepreciatingCost[]): number {
   return sumSen(assets.map(bookValue));
 }
 
+/** Book value of everything the café owns: its upgrades and the branch fit-out. */
+export function fixedAssetsBookValue(assets: readonly FixedAsset[], branch: BranchState | null): number {
+  return totalBookValue(assets) + (branch ? bookValue(branch.fitOut) : 0);
+}
+
 /** The charge at the next close (0 once fully depreciated). */
-export function nextCharge(asset: FixedAsset): number {
+export function nextCharge(asset: DepreciatingCost): number {
   return depreciationCharge(asset, asset.chargedDays + 1);
+}
+
+/** Take one close's depreciation on an asset (nothing once fully depreciated). */
+export function depreciateOne<T extends DepreciatingCost>(asset: T): { asset: T; chargeSen: number } {
+  if (asset.chargedDays >= asset.lifeDays) return { asset, chargeSen: 0 };
+  return { asset: { ...asset, chargedDays: asset.chargedDays + 1 }, chargeSen: nextCharge(asset) };
 }
 
 /** Take one day's depreciation on every asset still being depreciated. */
 export function depreciateAtClose(assets: readonly FixedAsset[]): { assets: FixedAsset[]; chargeSen: number } {
   let chargeSen = 0;
   const after = assets.map((a) => {
-    if (a.chargedDays >= a.lifeDays) return a;
-    chargeSen += nextCharge(a);
-    return { ...a, chargedDays: a.chargedDays + 1 };
+    const step = depreciateOne(a);
+    chargeSen += step.chargeSen;
+    return step.asset;
   });
   return { assets: after, chargeSen };
 }

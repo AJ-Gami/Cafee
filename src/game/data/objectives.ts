@@ -188,6 +188,15 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
     unit: 'count',
     progress: (s) => s.stats.goalsMet,
   },
+  {
+    id: 'open_branch',
+    title: 'Empayar bermula',
+    description: 'Buka cawangan kedua.',
+    xp: 30,
+    target: 1,
+    unit: 'count',
+    progress: (s) => s.stats.branchesOpened,
+  },
 ];
 
 export interface LevelDef {

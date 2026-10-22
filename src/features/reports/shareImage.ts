@@ -2,7 +2,7 @@ import { EVENTS } from '../../game/data/events';
 import { percentPoints, reputationPoints, weekdayName } from '../../game/demand';
 import { GOAL_TITLE } from '../../game/goals';
 import { formatRM } from '../../game/money';
-import type { WeeklySummary } from '../../game/reports';
+import { servedTotal, type WeeklySummary } from '../../game/reports';
 import type { DayReport } from '../../game/types';
 
 const W = 1080;
@@ -148,7 +148,7 @@ export function renderShareImage(report: DayReport): Promise<Blob> {
     headlineSen: report.netProfitSen,
     metrics: [
       ['Hasil jualan', formatRM(report.revenueSen)],
-      ['Pelanggan dilayan', String(report.customers.served)],
+      ['Pelanggan dilayan', String(servedTotal(report))],
       ['Kadar servis', `${percentPoints(report.customers.serviceRate)}%`],
       ['Reputasi', `${reputationPoints(report.reputationAfter)}/100`],
     ],

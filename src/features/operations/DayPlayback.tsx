@@ -5,6 +5,7 @@ import { Card } from '../../components/Card';
 import { Money } from '../../components/Money';
 import { ProgressBar } from '../../components/ProgressBar';
 import { CLOSE_HOUR, OPEN_HOUR } from '../../game/constants';
+import { BRANCH_LOCATIONS } from '../../game/data/branches';
 import { formatHour } from '../../game/demand';
 import { GOAL_TITLE } from '../../game/goals';
 import { cumulativeByHour } from '../../game/reports';
@@ -41,11 +42,14 @@ export function DayPlayback({ report, onDone }: { report: DayReport; onDone: () 
   }, [step, totalSteps, reduceMotion]);
 
   const currentHour = step === 0 ? OPEN_HOUR : step >= totalSteps ? CLOSE_HOUR : OPEN_HOUR + step;
-  const snapshot = step === 0 ? { served: 0, revenueSen: 0, lost: 0 } : cumulative[Math.min(step, totalSteps) - 1] ?? { served: 0, revenueSen: 0, lost: 0 };
+  const empty = { served: 0, revenueSen: 0, lost: 0, branchRevenueSen: 0 };
+  const snapshot = step === 0 ? empty : (cumulative[Math.min(step, totalSteps) - 1] ?? empty);
+  // Goals count the whole business's revenue.
+  const totalRevenueSen = snapshot.revenueSen + snapshot.branchRevenueSen;
   const visibleEvents = report.timeline.filter((t) => t.hour <= currentHour).slice(-5);
   const goal = report.goal;
   const closed = step >= totalSteps;
-  const goalReached = goal !== null && (closed ? goal.achieved : snapshot.revenueSen >= goal.targetSen);
+  const goalReached = goal !== null && (closed ? goal.achieved : totalRevenueSen >= goal.targetSen);
 
   return (
     <Card className="overflow-hidden">
@@ -85,15 +89,20 @@ export function DayPlayback({ report, onDone }: { report: DayReport; onDone: () 
           <dd className="tabular mt-0.5 text-xl font-semibold">{snapshot.lost}</dd>
         </div>
       </dl>
+      {report.branch ? (
+        <p className="mt-2 text-sm text-espresso-700">
+          Cawangan {BRANCH_LOCATIONS[report.branch.location].shortName}: jualan <Money sen={snapshot.branchRevenueSen} />
+        </p>
+      ) : null}
       {goal ? (
         <div className="mt-3 rounded-xl bg-cream-100 p-2.5">
           <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
             <span className="font-semibold text-espresso-800">{GOAL_TITLE[goal.kind]}</span>
             <span className="text-espresso-700">
-              <Money sen={snapshot.revenueSen} /> / <Money sen={goal.targetSen} />
+              <Money sen={totalRevenueSen} /> / <Money sen={goal.targetSen} />
             </span>
           </p>
-          <ProgressBar value={snapshot.revenueSen} max={goal.targetSen} tone={goalReached ? 'sage' : 'caramel'} label={GOAL_TITLE[goal.kind]} className="mt-1.5" />
+          <ProgressBar value={totalRevenueSen} max={goal.targetSen} tone={goalReached ? 'sage' : 'caramel'} label={GOAL_TITLE[goal.kind]} className="mt-1.5" />
           {goalReached ? (
             <p className="mt-1 text-sm font-semibold text-sage-700">Sasaran dicapai!</p>
           ) : closed ? (

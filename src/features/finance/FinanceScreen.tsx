@@ -13,7 +13,7 @@ import { Stat } from '../../components/Stat';
 import { HISTORY_LIMIT } from '../../game/constants';
 import { weekdayName } from '../../game/demand';
 import { remainingPrincipal } from '../../game/loans';
-import { historySeries, weekEndingOn, weeklySummaries } from '../../game/reports';
+import { historySeries, servedTotal, weekEndingOn, weeklySummaries } from '../../game/reports';
 import { currentInventoryValue, lastReport, reportForDay } from '../../game/selectors';
 import { DayReportView, TransactionList } from '../reports/DayReportView';
 import { WeekSummaryCard, weekStatusLabel } from '../reports/WeekSummary';
@@ -250,7 +250,7 @@ function DailyReportList() {
                   {r.eventId ? <Badge tone="info">Peristiwa</Badge> : null}
                 </span>
                 <span className="block text-sm text-espresso-600">
-                  Jualan <Money sen={r.revenueSen} /> · {r.customers.served} pelanggan
+                  Jualan <Money sen={r.revenueSen} /> · {servedTotal(r)} pelanggan
                 </span>
               </span>
               <span className="text-right">

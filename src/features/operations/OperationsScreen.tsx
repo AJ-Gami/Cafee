@@ -122,6 +122,12 @@ function PrepView() {
             <dt className="text-xs font-semibold uppercase text-espresso-600">Bayaran tetap semasa tutup</dt>
             <dd className="mt-0.5 text-sm text-espresso-700">
               Gaji <Money sen={fixed.wagesSen} /> · Sewa <Money sen={fixed.rentSen} /> · Utiliti asas <Money sen={fixed.utilitiesBaseSen} />
+              {fixed.branchSen > 0 ? (
+                <>
+                  {' '}
+                  · Cawangan <Money sen={fixed.branchSen} />
+                </>
+              ) : null}
               {fixed.loanSen > 0 ? (
                 <>
                   {' '}

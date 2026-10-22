@@ -3,6 +3,7 @@
  * untrusted: it may be truncated, hand-edited or from another version.
  */
 import {
+  BRANCH_MAX_BARISTAS,
   CAFE_NAME_MAX_LENGTH,
   GOAL_BASE_DAYS,
   GOAL_MIN_BASE_DAYS,
@@ -18,9 +19,10 @@ import { OBJECTIVES } from './data/objectives';
 import { PROMOTIONS } from './data/promotions';
 import { UPGRADES } from './data/upgrades';
 import { totalBookValue } from './assets';
+import { BRANCH_LOCATIONS } from './data/branches';
 import { goalKindFor } from './goals';
 import { installment, remainingPrincipal } from './loans';
-import type { ActiveLoan, EventId, FixedAsset, GameState } from './types';
+import type { ActiveLoan, DepreciatingCost, EventId, FixedAsset, GameState } from './types';
 import { INGREDIENT_IDS, PRODUCT_IDS } from './types';
 
 type Obj = Record<string, unknown>;
@@ -39,6 +41,7 @@ const TX_TYPES = new Set([
   'loan_proceeds',
   'loan_interest',
   'loan_principal',
+  'branch_setup',
 ]);
 const OBJECTIVE_IDS = new Set<string>(OBJECTIVES.map((o) => o.id));
 
@@ -153,6 +156,7 @@ function validateReport(v: Validator, value: unknown, path: string): void {
       'spoilageSen',
       'interestSen',
       'depreciationSen',
+      'writeOffSen',
     ]) {
       v.int(exp[key], `${path}.expenses.${key}`, 0);
     }
@@ -207,6 +211,7 @@ function validateReport(v: Validator, value: unknown, path: string): void {
   v.arr(r.objectivesCompleted, `${path}.objectivesCompleted`)?.forEach((o, i) =>
     v.oneOf(o, OBJECTIVE_IDS, `${path}.objectivesCompleted[${i}]`),
   );
+  if (r.branch !== null) validateBranchDay(v, r.branch, `${path}.branch`);
   if (r.goal !== null) {
     const goal = validateGoal(v, r.goal, `${path}.goal`);
     if (goal) {
@@ -222,6 +227,51 @@ function validateReport(v: Validator, value: unknown, path: string): void {
  * One asset per upgrade owned, never depreciated past its cost or beyond the closes since it was
  * bought; while preparing, the day's opening book value is that of the assets bought before today.
  */
+function validateCustomers(v: Validator, value: unknown, path: string): void {
+  const c = v.obj(value, path);
+  if (!c) return;
+  for (const key of ['arrivals', 'served', 'lostCapacity', 'lostStock', 'lostPrice', 'lostClosed']) v.int(c[key], `${path}.${key}`, 0);
+  v.num(c.serviceRate, `${path}.serviceRate`, 0, 1);
+}
+
+function validateBranchDay(v: Validator, value: unknown, path: string): void {
+  const b = v.obj(value, path);
+  if (!b) return;
+  v.oneOf(b.location, Object.keys(BRANCH_LOCATIONS), `${path}.location`);
+  v.int(b.baristas, `${path}.baristas`, 1, BRANCH_MAX_BARISTAS);
+  for (const key of ['revenueSen', 'cogsSen', 'wagesSen', 'rentSen', 'utilitiesSen']) v.int(b[key], `${path}.${key}`, 0);
+  v.int(b.contributionSen, `${path}.contributionSen`);
+  validateCustomers(v, b.customers, `${path}.customers`);
+  v.arr(b.hourlyRevenueSen, `${path}.hourlyRevenueSen`)?.forEach((h, i) => v.int(h, `${path}.hourlyRevenueSen[${i}]`, 0));
+  v.num(b.reputationBefore, `${path}.reputationBefore`, 0, 100);
+  v.num(b.reputationAfter, `${path}.reputationAfter`, 0, 100);
+  const parts = [b.revenueSen, b.cogsSen, b.wagesSen, b.rentSen, b.utilitiesSen, b.contributionSen];
+  if (parts.every((n) => typeof n === 'number')) {
+    const [revenue, cogs, wages, rent, utilities, contribution] = parts as number[];
+    v.check(contribution === (revenue ?? 0) - (cogs ?? 0) - (wages ?? 0) - (rent ?? 0) - (utilities ?? 0), `${path}.contributionSen: tidak sepadan`);
+  }
+}
+
+function validateDepreciatingCost(v: Validator, a: Obj, path: string, day: unknown): void {
+  v.int(a.costSen, `${path}.costSen`, 1, 100_000_000);
+  v.int(a.lifeDays, `${path}.lifeDays`, 1, 3_650);
+  v.int(a.acquiredDay, `${path}.acquiredDay`, 0, typeof day === 'number' ? day : 100_000);
+  v.int(a.chargedDays, `${path}.chargedDays`, 0, typeof a.lifeDays === 'number' ? a.lifeDays : 0);
+}
+
+function validateBranch(v: Validator, s: Obj): void {
+  const b = v.obj(s.branch, 'game.branch');
+  if (!b) return;
+  v.oneOf(b.location, Object.keys(BRANCH_LOCATIONS), 'game.branch.location');
+  v.int(b.openedDay, 'game.branch.openedDay', 1, typeof s.day === 'number' ? s.day : 100_000);
+  v.num(b.reputation, 'game.branch.reputation', 0, 100);
+  v.int(b.baristas, 'game.branch.baristas', 1, BRANCH_MAX_BARISTAS);
+  const fitOut = v.obj(b.fitOut, 'game.branch.fitOut');
+  if (!fitOut) return;
+  validateDepreciatingCost(v, fitOut, 'game.branch.fitOut', s.day);
+  v.check(fitOut.acquiredDay === b.openedDay, 'game.branch.fitOut.acquiredDay: mesti hari cawangan dibuka');
+}
+
 function validateAssets(v: Validator, s: Obj, upgrades: unknown[] | null): void {
   const list = v.arr(s.assets, 'game.assets');
   if (!list) return;
@@ -231,13 +281,14 @@ function validateAssets(v: Validator, s: Obj, upgrades: unknown[] | null): void 
     const a = v.obj(value, path);
     if (!a) return;
     v.oneOf(a.upgradeId, Object.keys(UPGRADES), `${path}.upgradeId`);
-    v.int(a.costSen, `${path}.costSen`, 1, 100_000_000);
-    v.int(a.lifeDays, `${path}.lifeDays`, 1, 3_650);
-    v.int(a.acquiredDay, `${path}.acquiredDay`, 0, typeof s.day === 'number' ? s.day : 100_000);
-    v.int(a.chargedDays, `${path}.chargedDays`, 0, typeof a.lifeDays === 'number' ? a.lifeDays : 0);
+    validateDepreciatingCost(v, a, path, s.day);
   });
   if (v.errors.length > errorsBefore) return;
   const assets = list as FixedAsset[];
+  // The branch fit-out follows the same rules (its own fields were checked with the branch).
+  const branch = typeof s.branch === 'object' && s.branch !== null ? (s.branch as Obj) : null;
+  const fitOut = branch && typeof branch.fitOut === 'object' && branch.fitOut !== null ? (branch.fitOut as DepreciatingCost) : null;
+  const depreciating: DepreciatingCost[] = fitOut && typeof fitOut.chargedDays === 'number' ? [...assets, fitOut] : assets;
   if (upgrades) {
     const ids = assets.map((a) => a.upgradeId);
     v.check(ids.length === upgrades.length && ids.every((id, i) => id === upgrades[i]), 'game.assets: tidak sepadan dengan naik taraf');
@@ -245,15 +296,17 @@ function validateAssets(v: Validator, s: Obj, upgrades: unknown[] | null): void 
   if (typeof s.lastSettledDay === 'number') {
     const settled = s.lastSettledDay;
     v.check(
-      assets.every((a) => a.chargedDays <= Math.max(0, settled - a.acquiredDay + 1)),
+      depreciating.every((a) => a.chargedDays <= Math.max(0, settled - a.acquiredDay + 1)),
       'game.assets: susut nilai melebihi hari yang ditutup',
     );
   }
+  // While preparing: the day opened with the assets bought before today, including a branch
+  // closed today (its book value is still to be written off).
   const dayStart = s.dayStart as Obj | undefined;
-  if (s.phase === 'prep' && typeof s.day === 'number' && dayStart) {
+  if (s.phase === 'prep' && typeof s.day === 'number' && dayStart && typeof s.pendingWriteOffSen === 'number') {
     const day = s.day;
     v.check(
-      dayStart.assetsSen === totalBookValue(assets.filter((a) => a.acquiredDay < day)),
+      dayStart.assetsSen === totalBookValue(depreciating.filter((a) => a.acquiredDay < day)) + s.pendingWriteOffSen,
       'game.dayStart.assetsSen: tidak sepadan dengan nilai buku aset',
     );
   }
@@ -424,6 +477,7 @@ export function validateGameState(value: unknown): ValidationResult {
       'goalsMet',
       'holidayGoalsMet',
       'perfectWeekends',
+      'branchesOpened',
     ]) {
       v.int(stats[key], `game.stats.${key}`, 0);
     }
@@ -432,6 +486,10 @@ export function validateGameState(value: unknown): ValidationResult {
   }
 
   if (s.loan !== null) validateLoan(v, s.loan, s);
+  if (s.branch !== null) validateBranch(v, s);
+  v.int(s.pendingWriteOffSen, 'game.pendingWriteOffSen', 0);
+  // A write-off is taken at the close of the day the branch was closed.
+  v.check(s.phase === 'prep' || s.pendingWriteOffSen === 0, 'game.pendingWriteOffSen: mesti sifar selepas kafe ditutup');
   validateAssets(v, s, upgrades);
 
   if (v.errors.length > 0) return { ok: false, errors: v.errors };
