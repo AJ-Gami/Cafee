@@ -134,7 +134,7 @@ export function BackupCard() {
               const label = `${c.game.cafeName}, Hari ${c.game.day}${state}`;
               return (
                 <li key={`${i}-${c.game.seed}-${c.game.day}-${c.game.txSeq}`}>
-                  <p className="text-sm text-espresso-700">
+                  <p className="break-words text-sm text-espresso-700">
                     {label} · tunai <Money sen={c.game.cashSen} />
                     {savedAtLabel(c.savedAt) ? <span className="block text-xs text-espresso-600">Disimpan {savedAtLabel(c.savedAt)}</span> : null}
                   </p>
@@ -178,7 +178,7 @@ export function BackupCard() {
         }}
       >
         {discardTarget ? (
-          <p>
+          <p className="break-words">
             Salinan {discardTarget.cafeName}, Hari {discardTarget.day} akan dipadam daripada pelayar ini. Permainan semasa tidak berubah. Tindakan ini
             tidak boleh dibatalkan.
           </p>
@@ -203,7 +203,7 @@ export function BackupCard() {
       >
         {pending ? (
           <>
-            <p>
+            <p className="break-words">
               Permainan semasa ({game.cafeName}, Hari {game.day}, tunai <Money sen={game.cashSen} />) akan digantikan dengan simpanan{' '}
               <strong>{pending.game.cafeName}</strong>, Hari {pending.game.day}, tunai <Money sen={pending.game.cashSen} />.
             </p>

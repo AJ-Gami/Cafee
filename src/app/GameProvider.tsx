@@ -323,7 +323,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [outdated, storage]);
 
   const readCopiesCb = useCallback(() => readCopies(storage), [storage]);
-  const discardCopy = useCallback((game: GameState) => discardStoredCopy(storage, game), [storage]);
+  const discardCopy = useCallback(
+    (game: GameState) => {
+      discardStoredCopy(storage, game);
+      // A start-up notice pointing to a copy must not outlive the copies the player removes.
+      setBootNotice((n) => (n?.kind === 'copy' ? null : n));
+    },
+    [storage],
+  );
 
   const value = useMemo<GameContextValue>(
     () => ({

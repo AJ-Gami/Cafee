@@ -145,23 +145,48 @@ test('a loadable backup copy can be restored from settings', async ({ page }) =>
   expect((await readSave(page))?.game.cafeName).toBe('Kopi Sandaran');
 });
 
-test('a kept copy can be removed from settings', async ({ page }) => {
+test('a kept copy can be removed from settings, and its start-up notice goes with it', async ({ page }) => {
   await gotoApp(page);
-  await writeSaveAsOtherTab(page, (g) => {
-    g.cafeName = 'Kopi Lama';
-    g.seed = 4242;
-  });
-  // Set that game aside as a kept copy, then start over.
-  await page.evaluate(([key, copiesKey]) => {
-    localStorage.setItem(copiesKey, JSON.stringify([JSON.parse(localStorage.getItem(key) ?? '{}')]));
-    localStorage.removeItem(key);
-  }, [SAVE_KEY, COPIES_KEY] as const);
+  // Another café, further ahead, moved aside into the old backup key (as an older build does).
+  await page.evaluate((key) => {
+    const save = JSON.parse(localStorage.getItem(key) ?? '{}');
+    const g = save.game;
+    Object.assign(g, { seed: 4242, cafeName: 'WWWWWWWWWWWWWWWWWWWWWWWW', day: 5, lastSettledDay: 4 });
+    localStorage.setItem('rlt-cafe-empire/save-rosak', JSON.stringify(save));
+  }, SAVE_KEY);
   await page.reload();
-  await page.getByRole('button', { name: 'Tetapan & simpanan' }).click();
-  await page.getByRole('button', { name: 'Buang salinan sandaran: Kopi Lama, Hari 1' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Buang salinan' }).click();
+  await expect(page.getByText(/Salinan kemajuan yang lebih jauh ditemui \(W+, Hari 5\)/)).toBeVisible();
+  await page.getByRole('button', { name: 'Tetapan simpanan' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Tetapan' });
+  const remove = sheet.getByRole('button', { name: /Buang salinan sandaran: W+, Hari 5/ });
+  await remove.scrollIntoViewIfNeeded();
+  // A 24-letter name wraps instead of widening the sheet.
+  expect(await sheet.evaluate((el) => [...el.querySelectorAll('*')].every((n) => n.getBoundingClientRect().right <= window.innerWidth + 0.5))).toBe(true);
+  await remove.click();
+  const confirm = page.getByRole('alertdialog', { name: 'Buang salinan sandaran ini?' });
+  expect(await confirm.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await confirm.getByRole('button', { name: 'Buang salinan' }).click();
   await expect(page.getByText('Salinan sandaran dalam pelayar ini')).toHaveCount(0);
   expect(await page.evaluate((key) => localStorage.getItem(key), COPIES_KEY)).toBe('[]');
-  // Focus stays in the settings sheet after its control disappears.
-  expect(await page.evaluate(() => !!document.activeElement?.closest('[role=dialog]'))).toBe(true);
+  // The button that opened the confirmation is gone: focus stays in the sheet, in both directions.
+  const inSheet = () => page.evaluate(() => !!document.activeElement?.closest('[role=dialog]'));
+  expect(await inSheet()).toBe(true);
+  await page.keyboard.press('Shift+Tab');
+  expect(await inSheet()).toBe(true);
+  await page.keyboard.press('Tab');
+  expect(await inSheet()).toBe(true);
+  await sheet.getByRole('button', { name: 'Tutup' }).click();
+  await expect(page.getByText(/Salinan kemajuan yang lebih jauh ditemui/)).toHaveCount(0);
+});
+
+test('a sheet keeps scrolling with the keyboard after its text is clicked', async ({ page }) => {
+  await gotoApp(page);
+  await page.getByRole('button', { name: 'Tetapan & simpanan' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Tetapan' });
+  await sheet.getByRole('heading', { name: 'Nama kafe' }).click();
+  const scrollTop = () => sheet.evaluate((el) => el.querySelector<HTMLElement>('.overflow-y-auto')?.scrollTop ?? 0);
+  const before = await scrollTop();
+  await page.keyboard.press('PageDown');
+  // The key press itself must scroll (clicking may already have scrolled a little).
+  await expect.poll(scrollTop).toBeGreaterThan(before + 100);
 });
