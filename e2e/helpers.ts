@@ -21,7 +21,7 @@ export interface StoredSave {
     staff: { id: string; name: string }[];
     dayStart: { cashSen: number; inventorySen: number; debtSen: number; staffNames?: string[] };
     stats: { negativeCashStreak: number };
-    products: Record<string, { stock: number; stockValueSen: number; priceSen: number }>;
+    products: Record<string, { stock: number; stockValueSen: number; priceSen: number; enabled: boolean }>;
   };
 }
 

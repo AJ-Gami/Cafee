@@ -119,6 +119,7 @@ test('progress made further ahead in an older-build tab is adopted, not reverted
 
 test('a loadable backup copy can be restored from settings', async ({ page }) => {
   await gotoApp(page);
+  await restockToForecast(page); // some play, so the copy is worth restoring
   await writeSaveAsOtherTab(page, (g) => {
     g.cashSen = 654_300;
     g.dayStart.cashSen = 654_300;
@@ -189,4 +190,26 @@ test('a sheet keeps scrolling with the keyboard after its text is clicked', asyn
   await page.keyboard.press('PageDown');
   // The key press itself must scroll (clicking may already have scrolled a little).
   await expect.poll(scrollTop).toBeGreaterThan(before + 100);
+});
+
+test('menu changes in an older-build tab do not pile up copies of the same game', async ({ context }) => {
+  const a = await context.newPage();
+  const old = await context.newPage();
+  await gotoApp(a);
+  await restockToForecast(a);
+  const base = (await readSave(a))!.game;
+  await gotoApp(old);
+  // The older build writes its own line of play: first the same state, then two menu switches
+  // (which record no transaction).
+  await writeAsOldBuild(old, base, 'old-1');
+  await expect(a.getByText(/Kemajuan dikemas kini daripada tab yang menjalankan versi lama/)).toBeVisible();
+  for (const [i, id] of (['latte', 'croissant'] as const).entries()) {
+    const g = structuredClone(base);
+    g.products.latte!.enabled = false;
+    if (id === 'croissant') g.products.croissant!.enabled = false;
+    await writeAsOldBuild(old, g, `old-menu-${i}`);
+    await expect.poll(async () => (await readSave(a))?.saveId).toBe(`old-menu-${i}`);
+  }
+  await expect(a.getByText(/Permainan tab ini sebelumnya/)).toHaveCount(0);
+  expect(await keptCopies(a)).toEqual([]);
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SAVE_SCHEMA_VERSION, STARTING_CASH_SEN } from '../constants';
-import { createNewGame, fireStaff, hireStaff, startNextDay } from '../engine';
+import { createNewGame, fireStaff, hireStaff, renameCafe, setPrice, setPromotion, startNextDay } from '../engine';
 import { hiringCandidates } from '../selectors';
 import type { GameState } from '../types';
 import {
@@ -454,6 +454,7 @@ describe('comparing copies written by different builds', () => {
     const other = playDays(newGame(555), 2).state;
 
     expect(keepCopy(storage, newGame())).toBe(false); // nothing played
+    expect(readCopies(createMemoryStorage({ [BACKUP_KEY]: exportSave(newGame(8)) }))).toEqual([]);
     expect(keepCopy(storage, day2, new Date(), day3)).toBe(false); // earlier point of the game in play
     expect(keepCopy(storage, other)).toBe(true);
     expect(keepCopy(storage, day2)).toBe(true);
@@ -506,5 +507,77 @@ describe('copies after team changes, trimmed history and newer versions', () => 
     expect(keepCopy(storage, playDays(newGame(7), 2).state)).toBe(true);
     const list = JSON.parse(storage.getItem(COPIES_KEY) ?? '[]') as { schemaVersion: number }[];
     expect(list.map((e) => e.schemaVersion)).toEqual([SAVE_SCHEMA_VERSION, SAVE_SCHEMA_VERSION + 1]);
+  });
+});
+
+describe('copies: choices checked against settled days, people, renames and v1 games', () => {
+  const base = stockAll(newGame(), 20);
+
+  it('matches newcomers to their own hiring, not just a count of hires', () => {
+    const [a, b] = hiringCandidates(base);
+    const founder = base.staff[0]!;
+    const hired = expectOk(hireStaff(base, a!.id)).state;
+    const x = expectOk(fireStaff(hired, a!.id)).state; // keeps the founder
+    let y = expectOk(fireStaff(hired, founder.id)).state; // keeps the newcomer instead
+    y = expectOk(fireStaff(expectOk(hireStaff(y, b!.id)).state, b!.id)).state;
+    expect(isEarlierStateOf(x, y)).toBe(false);
+  });
+
+  it('checks choices without a transaction against the day the other copy settled', () => {
+    const fork = playDays(newGame(), 4).state;
+    const opened = settle(stockAll(fork, 5)).state;
+    expect(isEarlierStateOf(fork, opened)).toBe(true);
+    expect(isEarlierStateOf({ ...fork, cafeName: 'Kafe Baru' }, opened)).toBe(false);
+    expect(isEarlierStateOf(expectOk(setPrice(fork, 'latte', 900)).state, opened)).toBe(false);
+    expect(isEarlierStateOf(expectOk(setPromotion(fork, 'social')).state, opened)).toBe(false);
+    expect(isEarlierStateOf(expectOk(setPromotion(fork, 'social')).state, settle(expectOk(setPromotion(fork, 'social')).state).state)).toBe(true);
+  });
+
+  it('counts letting someone go even after the other copy settled that day', () => {
+    const candidate = hiringCandidates(base)[0]!;
+    const twoStaff = expectOk(startNextDay(settle(expectOk(hireStaff(base, candidate.id)).state).state, 1)).state;
+    const fired = expectOk(fireStaff(twoStaff, candidate.id)).state;
+    const openedWithBoth = settle(stockAll(twoStaff, 5)).state;
+    expect(isEarlierStateOf(fired, openedWithBoth)).toBe(false);
+    expect(isEarlierStateOf(fired, settle(stockAll(fired, 5)).state)).toBe(true);
+  });
+
+  it('counts a rename made after closing', () => {
+    const closed = settle(base).state;
+    const renamed = expectOk(renameCafe(closed, 'Kafe Baru')).state;
+    expect(isEarlierStateOf(closed, renamed)).toBe(true);
+    expect(isEarlierStateOf(renamed, closed)).toBe(false);
+    expect(isEarlierStateOf(renamed, expectOk(startNextDay(closed, 1)).state)).toBe(false);
+    expect(isEarlierStateOf(renamed, expectOk(startNextDay(renamed, 1)).state)).toBe(true);
+  });
+
+  it('recognises earlier points of a game migrated from v1 (no reports)', () => {
+    const migrated = migrateSave({ version: 1, seed: 777, day: 5, cash: 4200.5, reputation: 60, products: [], staff: [], upgrades: [] });
+    if (!migrated.ok) throw new Error(migrated.error);
+    const g = migrated.game as GameState;
+    expect(isEarlierStateOf(g, g)).toBe(true);
+    expect(isEarlierStateOf(g, structuredClone(g))).toBe(true);
+    const bought = stockAll(g, 5);
+    expect(isEarlierStateOf(g, bought)).toBe(true);
+    expect(isEarlierStateOf(g, settle(bought).state)).toBe(true);
+    expect(isEarlierStateOf(bought, g)).toBe(false);
+    expect(keepCopy(createMemoryStorage(), g, new Date(), g)).toBe(false);
+  });
+
+  it('lets an untouched game lose to a played café from an older build', () => {
+    const played = playDays(newGame(31), 4).state;
+    expect(resolveOldBuildWrite(newGame(32), played)).toBe('theirs');
+    expect(resolveOldBuildWrite(played, newGame(32))).toBe('ours');
+  });
+
+  it('keeps a checked, diverging branch of the game in play over older copies of other games', () => {
+    const storage = createMemoryStorage();
+    for (const seed of [3, 2, 1]) keepCopy(storage, playDays(newGame(seed), 2).state);
+    const fork = playDays(newGame(), 5).state;
+    const ours = playDays(fork, 4, 40).state;
+    const theirs = playDays(fork, 2, 15).state;
+    expect(isEarlierStateOf(theirs, ours)).toBe(false);
+    expect(keepCopy(storage, theirs, new Date(), ours)).toBe(true);
+    expect(readCopies(storage).map((c) => c.game.seed)).toEqual([theirs.seed, 1, 2]);
   });
 });

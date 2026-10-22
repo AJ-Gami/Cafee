@@ -18,9 +18,11 @@
  */
 import { MAX_PRICE_SEN, MAX_STOCK_PER_PRODUCT, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
 import { UPGRADES } from './data/upgrades';
-import { createNewGame, sanitizeCafeName } from './engine';
+import { PROMOTIONS } from './data/promotions';
+import { createNewGame, hiringLabel, sanitizeCafeName, wagesLabelPrefix } from './engine';
 import { inventoryValue } from './economy';
-import type { GameState, ProductId, StaffMember, UpgradeId } from './types';
+import { applyBps } from './money';
+import type { DayReport, GameState, ProductId, StaffMember, UpgradeId } from './types';
 import { PRODUCT_IDS } from './types';
 import { validateGameState } from './validate';
 
@@ -315,10 +317,58 @@ function laterOnlyContinued(earlier: GameState, later: GameState): boolean {
     (id) => earlier.products[id].priceSen === later.products[id].priceSen && earlier.products[id].enabled === later.products[id].enabled,
   );
   if (!sameMenu) return false;
+  // Each newcomer needs their own hiring transaction after `earlier`'s.
+  const hiresAfter = later.dayTransactions.slice(earlier.dayTransactions.length).filter((t) => t.type === 'hiring').map((t) => t.label);
   const earlierStaff = new Set(earlier.staff.map((s) => s.id));
-  const joined = later.staff.filter((s) => !earlierStaff.has(s.id));
-  const hiresAfter = later.dayTransactions.slice(earlier.dayTransactions.length).filter((t) => t.type === 'hiring').length;
-  return joined.every((s) => s.hiredDay === earlier.day) && joined.length <= hiresAfter;
+  return later.staff
+    .filter((s) => !earlierStaff.has(s.id))
+    .every((s) => {
+      const i = hiresAfter.indexOf(hiringLabel(s.name));
+      if (i < 0) return false;
+      hiresAfter.splice(i, 1);
+      return true;
+    });
+}
+
+/**
+ * For `earlier` preparing a day that `later` has since settled: the choices that record no
+ * transaction, as that day's report shows them, are `earlier`'s (name, promotion, prices), and
+ * nobody `earlier` let go that day was still paid by `later` that day.
+ */
+function settledWithSameChoices(earlier: GameState, report: DayReport): boolean {
+  if (report.cafeName !== earlier.cafeName) return false;
+  // A promotion skipped for lack of cash is reported as none, so the choice cannot be checked.
+  if (!report.promotionSkipped && report.promotionId !== earlier.promotion) return false;
+  const discountBps = PROMOTIONS[report.promotionId].discountBps;
+  const samePrices = report.products.every((line) => {
+    const p = earlier.products[line.productId];
+    return line.salePriceSen === p.priceSen - applyBps(p.priceSen, discountBps);
+  });
+  if (!samePrices) return false;
+  const hiringPrefix = hiringLabel('');
+  const hadToday = [
+    ...(earlier.dayStart.staffNames ?? []),
+    ...earlier.dayTransactions.filter((t) => t.type === 'hiring' && t.label.startsWith(hiringPrefix)).map((t) => t.label.slice(hiringPrefix.length)),
+  ];
+  const letGo = hadToday.filter((name) => !earlier.staff.some((s) => s.name === name));
+  return !letGo.some((name) => report.transactions.some((t) => t.type === 'wages' && t.label.startsWith(wagesLabelPrefix(name))));
+}
+
+/**
+ * For a game with settled days but no reports (migrated from v1): the same game at the same
+ * point, judged by where `earlier`'s day started.
+ */
+function sameStartingPoint(earlier: GameState, later: GameState): boolean {
+  if (later.history.some((r) => r.day <= earlier.lastSettledDay)) return false;
+  if (later.day === earlier.day) return canonical(later.dayStart) === canonical(earlier.dayStart);
+  const first = later.history.find((r) => r.day === earlier.day);
+  return (
+    !!first &&
+    first.openingCashSen === earlier.dayStart.cashSen &&
+    first.openingInventorySen === earlier.dayStart.inventorySen &&
+    first.openingDebtSen === earlier.dayStart.debtSen &&
+    first.reputationBefore === earlier.reputation
+  );
 }
 
 /**
@@ -332,20 +382,20 @@ export function isEarlierStateOf(earlier: GameState, later: GameState): boolean 
   if (lastReport) {
     const same = later.history.find((r) => r.day === lastReport.day);
     if (!same || canonical(same) !== canonical(lastReport)) return false;
-  } else if (earlier.lastSettledDay > 0) {
+  } else if (earlier.lastSettledDay > 0 && !sameStartingPoint(earlier, later)) {
     return false;
   }
-  if (earlier.phase === 'prep') {
-    const laterSettledThatDay = later.lastSettledDay >= earlier.day;
-    if (earlier.dayTransactions.length > 0) {
-      // Preparation spending comes first in that day's transactions.
-      const laterTx = laterSettledThatDay ? later.history.find((r) => r.day === earlier.day)?.transactions : later.dayTransactions;
-      if (!laterTx || !startsWith(laterTx, earlier.dayTransactions)) return false;
-    }
-    // While both are preparing the same day, `later` may only have continued from `earlier`.
-    if (!laterSettledThatDay && !laterOnlyContinued(earlier, later)) return false;
+  if (earlier.phase === 'closed') {
+    // After closing, only a rename can still change: `later` must not have lost it.
+    return earlier.cafeName === lastReport?.cafeName || earlier.cafeName === later.cafeName;
   }
-  return true;
+  if (later.lastSettledDay >= earlier.day) {
+    const report = later.history.find((r) => r.day === earlier.day);
+    // Preparation spending comes first in that day's transactions.
+    return !!report && startsWith(report.transactions, earlier.dayTransactions) && settledWithSameChoices(earlier, report);
+  }
+  // Both are preparing the same day: `later` may only have continued from `earlier`.
+  return startsWith(later.dayTransactions, earlier.dayTransactions) && laterOnlyContinued(earlier, later);
 }
 
 /**
@@ -357,6 +407,8 @@ export function isEarlierStateOf(earlier: GameState, later: GameState): boolean 
  */
 export function resolveOldBuildWrite(ours: GameState, theirs: GameState): 'ours' | 'theirs' {
   if (ours.seed === theirs.seed) return compareProgress(theirs, ours) >= 0 ? 'theirs' : 'ours';
+  // A game nobody has played yet holds nothing to lose.
+  if (isUntouched(ours) && !isUntouched(theirs)) return 'theirs';
   if (ours.status !== 'active' && theirs.status === 'active') return 'theirs';
   return 'ours';
 }
@@ -383,7 +435,7 @@ function readCopyList(storage: StorageLike): unknown[] {
 }
 
 /** A game nobody has played yet: nothing in it is worth restoring. */
-function isUntouched(g: GameState): boolean {
+export function isUntouched(g: GameState): boolean {
   return g.day === 1 && g.phase === 'prep' && g.history.length === 0 && g.dayTransactions.length === 0;
 }
 
@@ -411,14 +463,15 @@ export function keepCopy(storage: StorageLike | null, game: GameState, now: Date
       ...copies.filter((c) => !isEarlierStateOf(c.game, game) && !(current && isEarlierStateOf(c.game, current))),
     ];
     while (kept.length > MAX_KEPT_COPIES) {
-      // Beyond the limit, first let go of a copy that is merely behind the game in play (e.g. an old
-      // snapshot whose history has since been trimmed, so it cannot be recognised exactly), oldest
-      // first; otherwise the oldest copy.
+      // Beyond the limit, first let go of a copy of the game in play that is behind it and can no
+      // longer be checked against it (its history has been trimmed away), oldest first; otherwise
+      // the oldest copy. A copy that was checked and differs is real play like any other.
       let drop = kept.length - 1;
       if (current) {
         for (let i = kept.length - 1; i >= 0; i--) {
-          const c = kept[i] as { game: GameState };
-          if (c.game.seed === current.seed && compareProgress(c.game, current) < 0) {
+          const c = (kept[i] as { game: GameState }).game;
+          const unverifiable = c.seed === current.seed && compareProgress(c, current) < 0 && c.lastSettledDay > 0 && !current.history.some((r) => r.day === c.lastSettledDay);
+          if (unverifiable) {
             drop = i;
             break;
           }
@@ -490,7 +543,8 @@ export function readCopies(storage: StorageLike | null): DecodedSave[] {
   const seen = new Set<string>();
   const out: DecodedSave[] = [];
   const add = (save: DecodedSave | null) => {
-    if (!save) return;
+    // A game nobody has played (e.g. an older build's fresh start left in BACKUP_KEY) is no copy.
+    if (!save || isUntouched(save.game)) return;
     const key = canonical(save.game);
     if (seen.has(key)) return;
     seen.add(key);

@@ -288,6 +288,16 @@ export function setPromotion(state: GameState, promotionId: PromotionId): Engine
   return succeed({ ...state, promotion: promotionId }, message);
 }
 
+/** Label of the hiring transaction; names the person (save comparisons match hires by it). */
+export function hiringLabel(name: string): string {
+  return `Kos pengambilan ${name}`;
+}
+
+/** Start of a wage transaction's label for a team member. */
+export function wagesLabelPrefix(name: string): string {
+  return `Gaji ${name} (`;
+}
+
 export function hireStaff(state: GameState, candidateId: string): EngineResult {
   const blocked = guardPrep(state);
   if (blocked) return blocked;
@@ -300,7 +310,7 @@ export function hireStaff(state: GameState, candidateId: string): EngineResult {
   if (candidate.hireFeeSen > state.cashSen) return insufficient(candidate.hireFeeSen, state.cashSen);
   const { hireFeeSen, ...member } = candidate;
   let next: GameState = { ...state, staff: [...state.staff, member] };
-  next = withTransaction(next, 'hiring', -hireFeeSen, `Kos pengambilan ${member.name}`);
+  next = withTransaction(next, 'hiring', -hireFeeSen, hiringLabel(member.name));
   return succeed(
     next,
     `${member.name} kini sebahagian pasukan sebagai ${STAFF_ROLES[member.role].name}. Gaji ${formatRM(member.wageSen)} sehari.`,
@@ -490,7 +500,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
   if (event && eventCash < 0) addTx('event_cost', eventCash, event.def.title);
   if (event && eventCash > 0) addTx('event_income', eventCash, event.def.title);
   for (const member of state.staff) {
-    addTx('wages', -member.wageSen, `Gaji ${member.name} (${STAFF_ROLES[member.role].name})`);
+    addTx('wages', -member.wageSen, `${wagesLabelPrefix(member.name)}${STAFF_ROLES[member.role].name})`);
   }
   const rentSen = dailyRent();
   const utilitiesSen = dailyUtilities(state.upgrades, sim.customers.served);
