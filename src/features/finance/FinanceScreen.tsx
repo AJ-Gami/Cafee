@@ -300,6 +300,7 @@ function WeeklyReportList() {
                   </span>
                   <span className="block text-sm text-espresso-600">
                     Jualan <Money sen={w.revenueSen} /> · {w.served} pelanggan
+                    {w.goalsSet > 0 ? ` · sasaran ${w.goalsMet}/${w.goalsSet}` : ''}
                   </span>
                 </span>
                 <span className="text-right">

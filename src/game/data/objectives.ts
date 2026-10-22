@@ -152,6 +152,42 @@ export const OBJECTIVES: readonly ObjectiveDef[] = [
     unit: 'count',
     progress: (s) => s.stats.loansRepaid,
   },
+  {
+    id: 'weekend_goal',
+    title: 'Sasaran tercapai',
+    description: 'Capai sasaran jualan pada hari Sabtu, Ahad atau cuti umum.',
+    xp: 10,
+    target: 1,
+    unit: 'count',
+    progress: (s) => s.stats.goalsMet,
+  },
+  {
+    id: 'holiday_goal',
+    title: 'Raikan cuti umum',
+    description: 'Capai sasaran jualan pada hari cuti umum.',
+    xp: 15,
+    target: 1,
+    unit: 'count',
+    progress: (s) => s.stats.holidayGoalsMet,
+  },
+  {
+    id: 'perfect_weekend',
+    title: 'Hujung minggu cemerlang',
+    description: 'Capai sasaran jualan pada hari Sabtu dan Ahad dalam minggu yang sama.',
+    xp: 20,
+    target: 1,
+    unit: 'count',
+    progress: (s) => s.stats.perfectWeekends,
+  },
+  {
+    id: 'goals_5',
+    title: 'Pakar hujung minggu',
+    description: 'Capai 5 sasaran jualan hujung minggu atau cuti umum.',
+    xp: 25,
+    target: 5,
+    unit: 'count',
+    progress: (s) => s.stats.goalsMet,
+  },
 ];
 
 export interface LevelDef {

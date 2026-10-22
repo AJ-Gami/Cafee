@@ -3,7 +3,10 @@ import { Badge } from '../../components/Badge';
 import { Card, CardTitle, Row } from '../../components/Card';
 import { Money } from '../../components/Money';
 import { percentPoints, weekdayName } from '../../game/demand';
-import type { WeekCoverage, WeeklySummary } from '../../game/reports';
+import { formatRM } from '../../game/money';
+import { weekShareText, type WeekCoverage, type WeeklySummary } from '../../game/reports';
+import { renderWeekShareImage } from './shareImage';
+import { ShareActions } from './ShareActions';
 
 function signedCount(n: number): string {
   return n > 0 ? `+${n}` : String(n);
@@ -87,7 +90,16 @@ export function WeekSummaryCard({ summary: w, closing = false }: { summary: Week
         <Row label={w.complete ? 'Tunai awal minggu' : `Tunai awal Hari ${w.firstPlayedDay}`} value={<Money sen={w.openingCashSen} />} />
         <Row label={w.complete ? 'Tunai akhir minggu' : `Tunai akhir Hari ${w.lastPlayedDay}`} value={<Money sen={w.closingCashSen} />} />
         <Row label="Reputasi" value={`${w.reputationStart} → ${w.reputationEnd}`} />
+        {w.goalsSet > 0 ? <Row label="Sasaran jualan dicapai" value={`${w.goalsMet}/${w.goalsSet}`} /> : null}
       </dl>
+      <ShareActions
+        render={() => renderWeekShareImage(w)}
+        fileName={`cafe-empire-minggu-${w.week}.png`}
+        title={`${w.cafeName} — Minggu ${w.week}`}
+        text={() => weekShareText(w, formatRM)}
+        cardName="Kad mingguan"
+        label="mingguan"
+      />
     </Card>
   );
 }

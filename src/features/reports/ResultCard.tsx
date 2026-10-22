@@ -1,60 +1,19 @@
-import { Copy, Gauge, Heart, Share2, ShoppingCart, Users } from 'lucide-react';
-import { useState } from 'react';
-import { Button } from '../../components/Button';
+import { Gauge, Heart, ShoppingCart, Target, Users } from 'lucide-react';
 import { CafeScene } from '../../components/CafeScene';
 import { Money } from '../../components/Money';
 import { EVENTS } from '../../game/data/events';
 import { percentPoints, reputationPoints, weekdayName } from '../../game/demand';
+import { GOAL_TITLE, goalShortfallSen } from '../../game/goals';
 import { formatRM } from '../../game/money';
 import { shareText } from '../../game/reports';
 import type { DayReport } from '../../game/types';
 import { renderShareImage } from './shareImage';
-
-type ShareState = { status: 'idle' } | { status: 'working' } | { status: 'done'; message: string } | { status: 'error'; message: string };
+import { ShareActions } from './ShareActions';
 
 /** Shareable end-of-day result card. */
 export function ResultCard({ report }: { report: DayReport }) {
-  const [share, setShare] = useState<ShareState>({ status: 'idle' });
   const repDelta = Math.round((report.reputationAfter - report.reputationBefore) * 10) / 10;
-
-  const onShare = async () => {
-    setShare({ status: 'working' });
-    try {
-      const blob = await renderShareImage(report);
-      const fileName = `cafe-empire-hari-${report.day}.png`;
-      const file = typeof File !== 'undefined' ? new File([blob], fileName, { type: 'image/png' }) : null;
-      const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
-      if (file && nav.share && nav.canShare?.({ files: [file] })) {
-        await nav.share({ files: [file], title: `${report.cafeName} — Hari ${report.day}`, text: shareText(report, formatRM) });
-        setShare({ status: 'done', message: 'Kad keputusan dikongsi.' });
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 2_000);
-      setShare({ status: 'done', message: 'Imej kad keputusan dimuat turun.' });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        setShare({ status: 'idle' });
-        return;
-      }
-      setShare({ status: 'error', message: 'Gagal berkongsi. Cuba salin teks sebagai ganti.' });
-    }
-  };
-
-  const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(shareText(report, formatRM));
-      setShare({ status: 'done', message: 'Ringkasan disalin ke papan klip.' });
-    } catch {
-      setShare({ status: 'error', message: 'Papan klip tidak tersedia pada pelayar ini.' });
-    }
-  };
+  const goal = report.goal;
 
   return (
     <section aria-label={`Kad keputusan Hari ${report.day}`} className="overflow-hidden rounded-3xl bg-cream-50 shadow-lift">
@@ -108,23 +67,29 @@ export function ResultCard({ report }: { report: DayReport }) {
             </dd>
           </div>
         </dl>
+        {goal ? (
+          <p className={`mt-3 flex items-start gap-1.5 text-sm font-semibold ${goal.achieved ? 'text-sage-700' : 'text-rust-700'}`}>
+            <Target className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>
+              {GOAL_TITLE[goal.kind]} <Money sen={goal.targetSen} />:{' '}
+              {goal.achieved ? (
+                'dicapai!'
+              ) : (
+                <>
+                  tidak dicapai (kurang <Money sen={goalShortfallSen(goal, report.revenueSen)} />)
+                </>
+              )}
+            </span>
+          </p>
+        ) : null}
         {report.eventId ? <p className="mt-3 text-sm text-espresso-700">Peristiwa: {EVENTS[report.eventId].title}</p> : null}
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button
-            variant="secondary"
-            onClick={onShare}
-            loading={share.status === 'working'}
-            icon={<Share2 className="size-4" aria-hidden="true" />}
-          >
-            {share.status === 'working' ? 'Menjana…' : 'Kongsi kad'}
-          </Button>
-          <Button variant="secondary" onClick={onCopy} icon={<Copy className="size-4" aria-hidden="true" />}>
-            Salin teks
-          </Button>
-        </div>
-        <p aria-live="polite" className={`mt-2 min-h-5 text-sm ${share.status === 'error' ? 'text-rust-700' : 'text-sage-700'}`}>
-          {share.status === 'done' || share.status === 'error' ? share.message : ''}
-        </p>
+        <ShareActions
+          render={() => renderShareImage(report)}
+          fileName={`cafe-empire-hari-${report.day}.png`}
+          title={`${report.cafeName} — Hari ${report.day}`}
+          text={() => shareText(report, formatRM)}
+          cardName="Kad keputusan"
+        />
         <p className="text-xs text-espresso-600">Data simulasi permainan — bukan data perniagaan sebenar.</p>
       </div>
     </section>

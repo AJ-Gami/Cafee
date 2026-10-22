@@ -1,5 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
-import { BACKUP_KEY, COPIES_KEY, gotoApp, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, toast, writeSaveAsOtherTab, type StoredSave } from './helpers';
+import {
+  BACKUP_KEY,
+  COPIES_KEY,
+  gotoApp,
+  openCafeAndSkip,
+  readSave,
+  restockToForecast,
+  SAVE_KEY,
+  SCHEMA_VERSION,
+  toast,
+  writeSaveAsOtherTab,
+  type StoredSave,
+} from './helpers';
 
 /** Rewrite the stored save as a different schema version, as another build of the game would. */
 async function writeAsVersion(page: Page, version: number, mutate: (game: Record<string, unknown>) => void): Promise<void> {
@@ -42,16 +54,29 @@ test('a running tab that sees a newer-version save stops instead of overwriting 
   expect(await a.evaluate((key) => localStorage.getItem(key), SAVE_KEY)).toBe(written);
 });
 
-/** Write `game` as an older build would: the v2 format, without the fields v3 added. */
-async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string): Promise<void> {
-  const g = structuredClone(game) as unknown as Record<string, unknown> & { dayStart: Record<string, unknown>; stats: Record<string, unknown> };
-  g.schemaVersion = 2;
-  delete g.loan;
-  delete g.dayStart.debtSen;
-  delete g.stats.loansRepaid;
+/** Write `game` as an older build would: schema `version`, without the fields later versions added. */
+async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string, version: 2 | 3 = 2): Promise<void> {
+  const g = structuredClone(game) as unknown as Record<string, unknown> & {
+    dayStart: Record<string, unknown>;
+    stats: Record<string, unknown>;
+    history: Record<string, unknown>[];
+  };
+  g.schemaVersion = version;
+  // Added in v4 (sales goals).
+  delete g.goal;
+  delete g.stats.goalsMet;
+  delete g.stats.holidayGoalsMet;
+  delete g.stats.perfectWeekends;
+  for (const r of g.history) delete r.goal;
+  if (version === 2) {
+    // Added in v3 (loans).
+    delete g.loan;
+    delete g.dayStart.debtSen;
+    delete g.stats.loansRepaid;
+  }
   await page.evaluate(
     ([key, value]) => localStorage.setItem(key, value),
-    [SAVE_KEY, JSON.stringify({ schemaVersion: 2, savedAt: new Date().toISOString(), saveId, game: g })] as const,
+    [SAVE_KEY, JSON.stringify({ schemaVersion: version, savedAt: new Date().toISOString(), saveId, game: g })] as const,
   );
 }
 
@@ -76,7 +101,7 @@ test('an older-build tab that is behind cannot replace newer progress; a divergi
   await expect(a.getByText('Tab versi lama dikesan')).toBeVisible();
   await expect(a.getByText(/kemajuan yang kurang \(Hari 1\)\. Permainan anda \(Hari 2\) dikekalkan\. Muat semula/)).toBeVisible();
   expect((await readSave(a))?.game.day).toBe(2);
-  expect((await readSave(a))?.schemaVersion).toBe(3);
+  expect((await readSave(a))?.schemaVersion).toBe(SCHEMA_VERSION);
   expect(await keptCopies(a)).toEqual([]);
 
   // Day 1 played differently in the old tab (it bought more stock): kept aside and restorable.
@@ -91,31 +116,38 @@ test('an older-build tab that is behind cannot replace newer progress; a divergi
   await expect(a.getByRole('button', { name: 'Pulihkan salinan sandaran: Kopi Kita, Hari 1' })).toBeVisible();
 });
 
-test('progress made further ahead in an older-build tab is adopted, not reverted', async ({ context }) => {
-  const a = await context.newPage();
-  const old = await context.newPage();
-  await gotoApp(a);
-  await restockToForecast(a);
-  const day1 = (await readSave(a))!.game;
-  await openCafeAndSkip(a, 1);
-  await a.getByRole('button', { name: 'Mulakan Hari 2' }).click();
-  const day2 = (await readSave(a))!.game;
-  // Tab A goes back to day 1 (another current tab wrote it); then the old-build tab saves day 2.
-  await gotoApp(old);
-  await old.evaluate(
-    ([key, game]) => localStorage.setItem(key, JSON.stringify({ schemaVersion: 3, savedAt: new Date().toISOString(), saveId: 'rewind', game })),
-    [SAVE_KEY, day1] as const,
-  );
-  await expect(a.getByRole('heading', { name: 'Persediaan Hari 1' })).toBeVisible();
-  await writeAsOldBuild(old, day2, 'old-ahead');
-  await expect(a.getByRole('heading', { name: 'Persediaan Hari 2' })).toBeVisible();
-  await expect(a.getByText(/Kemajuan dikemas kini daripada tab yang menjalankan versi lama permainan ini \(Kopi Kita, Hari 2\)/)).toBeVisible();
-  // Not written back: the old build can still read what it saved, and nothing needed setting aside.
-  const stored = await readSave(a);
-  expect(stored?.schemaVersion).toBe(2);
-  expect(stored?.game.day).toBe(2);
-  expect(await keptCopies(a)).toEqual([]);
-});
+for (const version of [2, 3] as const) {
+  test(`progress made further ahead in an older-build tab (v${version}) is adopted, not reverted`, async ({ context }) => {
+    const a = await context.newPage();
+    const old = await context.newPage();
+    await gotoApp(a);
+    await restockToForecast(a);
+    const day1 = (await readSave(a))!.game;
+    await openCafeAndSkip(a, 1);
+    await a.getByRole('button', { name: 'Mulakan Hari 2' }).click();
+    const day2 = (await readSave(a))!.game;
+    // Tab A goes back to day 1 (another current tab wrote it); then the old-build tab saves day 2.
+    await gotoApp(old);
+    await old.evaluate(
+      ([key, game, version]) => localStorage.setItem(key, JSON.stringify({ schemaVersion: version, savedAt: new Date().toISOString(), saveId: 'rewind', game })),
+      [SAVE_KEY, day1, SCHEMA_VERSION] as const,
+    );
+    await expect(a.getByRole('heading', { name: 'Persediaan Hari 1' })).toBeVisible();
+    await writeAsOldBuild(old, day2, 'old-ahead', version);
+    await expect(a.getByRole('heading', { name: 'Persediaan Hari 2' })).toBeVisible();
+    await expect(a.getByText(/Kemajuan dikemas kini daripada tab yang menjalankan versi lama permainan ini \(Kopi Kita, Hari 2\)/)).toBeVisible();
+    // Not written back: the old build can still read what it saved, and nothing needed setting aside.
+    const stored = await readSave(a);
+    expect(stored?.schemaVersion).toBe(version);
+    expect(stored?.game.day).toBe(2);
+    expect(await keptCopies(a)).toEqual([]);
+    // Playing on here saves in this build's format, with the fields the old build lacked.
+    await restockToForecast(a);
+    const upgraded = (await readSave(a)) as (StoredSave & { game: { goal: unknown; stats: Record<string, number> } }) | null;
+    expect(upgraded?.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(upgraded?.game).toMatchObject({ day: 2, goal: null, stats: { goalsMet: 0, holidayGoalsMet: 0, perfectWeekends: 0 } });
+  });
+}
 
 test('a loadable backup copy can be restored from settings', async ({ page }) => {
   await gotoApp(page);

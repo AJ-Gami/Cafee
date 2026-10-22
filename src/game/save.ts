@@ -11,10 +11,13 @@
  *       ledger, reports or stats.
  *   v2: envelope `{ schemaVersion: 2, savedAt, game }`, all money in integer
  *       sen, transaction ledger, daily reports and stats.
- *   v3 (current): adds bank loans — `game.loan`, `dayStart.debtSen`,
+ *   v3: adds bank loans — `game.loan`, `dayStart.debtSen`,
  *       `stats.loansRepaid`, loan transaction types, and per-report
  *       `loanProceedsSen`, `loanPrincipalRepaidSen`, `openingDebtSen`,
  *       `closingDebtSen` and `expenses.interestSen`.
+ *   v4 (current): adds weekend and public-holiday sales goals — `game.goal`,
+ *       per-report `goal`, `stats.goalsMet`, `stats.holidayGoalsMet` and
+ *       `stats.perfectWeekends`, and the goal objectives.
  */
 import { DEFAULT_CAFE_NAME, MAX_PRICE_SEN, MAX_STOCK_PER_PRODUCT, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
 import { PRODUCTS } from './data/products';
@@ -22,8 +25,9 @@ import { UPGRADES } from './data/upgrades';
 import { PROMOTIONS } from './data/promotions';
 import { createNewGame, hiringLabel, sanitizeCafeName, wagesLabelPrefix } from './engine';
 import { inventoryValue } from './economy';
+import { dayGoalFor } from './goals';
 import { applyBps } from './money';
-import type { DayReport, GameState, ProductId, StaffMember, UpgradeId } from './types';
+import type { DayReport, EventId, GameState, ProductId, StaffMember, UpgradeId } from './types';
 import { PRODUCT_IDS } from './types';
 import { validateGameState } from './validate';
 
@@ -206,6 +210,28 @@ function migrateV2toV3(v2: unknown): unknown {
   };
 }
 
+/**
+ * v3 -> v4: goals did not exist, so no past day had one and none was met. A save made while
+ * preparing a Saturday, Sunday or public holiday gets that day's goal, set as the day would have
+ * set it (a malformed history is left for validation to reject).
+ */
+function migrateV3toV4(v3: unknown): unknown {
+  if (!isObj(v3)) return v3;
+  const history = Array.isArray(v3.history) ? v3.history : null;
+  const reports = history?.filter((r): r is DayReport => isObj(r) && typeof r.day === 'number' && typeof r.revenueSen === 'number') ?? [];
+  const goal =
+    v3.phase === 'prep' && typeof v3.day === 'number' && history !== null && reports.length === history.length
+      ? dayGoalFor(v3.day, typeof v3.todayEventId === 'string' ? (v3.todayEventId as EventId) : null, reports)
+      : null;
+  return {
+    ...v3,
+    schemaVersion: 4,
+    goal,
+    stats: isObj(v3.stats) ? { ...v3.stats, goalsMet: 0, holidayGoalsMet: 0, perfectWeekends: 0 } : v3.stats,
+    history: history ? history.map((r: unknown) => (isObj(r) ? { ...r, goal: null } : r)) : v3.history,
+  };
+}
+
 export type MigrationResult =
   | { ok: true; game: unknown; fromVersion: number }
   /** `newer`: written by a newer version of the game, so this build must not touch it. */
@@ -239,6 +265,10 @@ export function migrateSave(raw: unknown): MigrationResult {
   if (version === 2) {
     game = migrateV2toV3(game);
     version = 3;
+  }
+  if (version === 3) {
+    game = migrateV3toV4(game);
+    version = 4;
   }
   if (version !== SAVE_SCHEMA_VERSION) return { ok: false, error: 'Migrasi simpanan tidak lengkap.' };
   return { ok: true, game, fromVersion };

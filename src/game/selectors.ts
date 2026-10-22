@@ -9,14 +9,15 @@ import { OBJECTIVES } from './data/objectives';
 import { PRODUCTS } from './data/products';
 import { PROMOTION_ORDER, PROMOTIONS, type PromotionDef } from './data/promotions';
 import { UPGRADE_ORDER, UPGRADES, type UpgradeDef } from './data/upgrades';
-import { estimateDemand, modifiersForState, reputationPoints, salePrice, type DemandEstimate } from './demand';
+import { estimateDemand, modifiersForState, reputationPoints, salePrice, weekdayIndex, type DemandEstimate } from './demand';
 import { averageUnitCost, canAfford, inventoryValue, projectedFixedCosts, quotePurchase, todaysUnitCost } from './economy';
 import { isEventVisibleInPrep, resolveEvent } from './events';
+import { GOAL_TITLE, goalRaisePercent } from './goals';
 import { installment, offerTotalInterest, remainingPrincipal, settlementQuote, type Installment, type SettlementQuote } from './loans';
 import { formatRM, marginPercent } from './money';
 import { currentLevel, isObjectiveComplete } from './objectives';
 import { candidatesForState, hourlyCapacity, staffSlots } from './staff';
-import type { ActiveLoan, DayReport, GameState, ProductId, StaffCandidate } from './types';
+import type { ActiveLoan, DayGoal, DayReport, GameState, ProductId, StaffCandidate } from './types';
 import { PRODUCT_IDS } from './types';
 
 /** Demand estimate using only information the player can see (forecast events, not surprises). */
@@ -210,6 +211,24 @@ export function visibleTodayEvent(state: GameState): VisibleEvent | null {
     tone: resolved.def.tone,
     mitigationNote: resolved.mitigationNote,
   };
+}
+
+export interface GoalView {
+  goal: DayGoal;
+  title: string;
+  /** How far the target is above the recent average, in whole percent. */
+  raisePercent: number;
+}
+
+/** Today's sales goal while preparing (null on days without one). */
+export function todayGoalView(state: GameState): GoalView | null {
+  if (state.status !== 'active' || state.phase !== 'prep' || !state.goal) return null;
+  return { goal: state.goal, title: GOAL_TITLE[state.goal.kind], raisePercent: goalRaisePercent(state.goal.kind) };
+}
+
+/** Preparing a Friday: the weekend goals start tomorrow. */
+export function weekendGoalsTomorrow(state: GameState): boolean {
+  return state.status === 'active' && state.phase === 'prep' && weekdayIndex(state.day) === 4;
 }
 
 export function lastReport(state: GameState): DayReport | null {

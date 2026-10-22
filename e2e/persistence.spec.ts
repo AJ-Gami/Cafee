@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { BACKUP_KEY, gotoApp, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, toast, writeSaveAsOtherTab } from './helpers';
+import { BACKUP_KEY, gotoApp, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, SCHEMA_VERSION, toast, writeSaveAsOtherTab } from './helpers';
 
 test('a malformed save is backed up and a new game starts with a notice', async ({ page }) => {
   await gotoApp(page);
@@ -30,7 +30,7 @@ test('a v1 prototype save is migrated on load', async ({ page }) => {
   await page.reload();
   await expect(page.getByText('Simpanan versi 1 telah dikemas kini ke format terkini.')).toBeVisible();
   await expect(page.locator('header')).toContainText('RM4,321.50');
-  expect((await readSave(page))?.schemaVersion).toBe(3);
+  expect((await readSave(page))?.schemaVersion).toBe(SCHEMA_VERSION);
 });
 
 test('reset requires confirmation and then clears all progress', async ({ page }) => {

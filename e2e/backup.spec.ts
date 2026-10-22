@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
-import { gotoApp, openCafeAndSkip, readSave, restockToForecast, toast, writeSaveAsOtherTab } from './helpers';
+import { gotoApp, openCafeAndSkip, readSave, restockToForecast, SCHEMA_VERSION, toast, writeSaveAsOtherTab } from './helpers';
 
 test('export downloads the current save and import restores it after a reset', async ({ page }) => {
   await gotoApp(page);
@@ -12,7 +12,7 @@ test('export downloads the current save and import restores it after a reset', a
   expect(download.suggestedFilename()).toBe('cafe-empire-kopi-kita-hari-1.json');
   const path = await download.path();
   const exported = JSON.parse(await readFile(path, 'utf8'));
-  expect(exported.schemaVersion).toBe(3);
+  expect(exported.schemaVersion).toBe(SCHEMA_VERSION);
   expect(exported.game.history).toHaveLength(1);
   await expect(page.getByText(/dimuat turun/)).toBeVisible();
 

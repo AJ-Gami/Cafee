@@ -2,14 +2,24 @@
  * Runtime validation for loaded save data. Anything read from localStorage is
  * untrusted: it may be truncated, hand-edited or from another version.
  */
-import { CAFE_NAME_MAX_LENGTH, MAX_PRICE_SEN, MAX_STOCK_PER_PRODUCT, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
+import {
+  CAFE_NAME_MAX_LENGTH,
+  GOAL_BASE_DAYS,
+  GOAL_MIN_BASE_DAYS,
+  GOAL_MIN_TARGET_SEN,
+  MAX_PRICE_SEN,
+  MAX_STOCK_PER_PRODUCT,
+  MIN_PRICE_SEN,
+  SAVE_SCHEMA_VERSION,
+} from './constants';
 import { EVENTS } from './data/events';
 import { LOAN_OFFERS } from './data/loans';
 import { OBJECTIVES } from './data/objectives';
 import { PROMOTIONS } from './data/promotions';
 import { UPGRADES } from './data/upgrades';
+import { goalKindFor } from './goals';
 import { installment, remainingPrincipal } from './loans';
-import type { ActiveLoan, GameState } from './types';
+import type { ActiveLoan, EventId, GameState } from './types';
 import { PRODUCT_IDS } from './types';
 
 type Obj = Record<string, unknown>;
@@ -88,6 +98,16 @@ function validateTransaction(v: Validator, value: unknown, path: string): void {
   if (tx.quantity !== undefined) v.int(tx.quantity, `${path}.quantity`, 0);
 }
 
+function validateGoal(v: Validator, value: unknown, path: string): Obj | null {
+  const goal = v.obj(value, path);
+  if (!goal) return null;
+  v.oneOf(goal.kind, ['weekend', 'holiday'], `${path}.kind`);
+  v.int(goal.targetSen, `${path}.targetSen`, GOAL_MIN_TARGET_SEN);
+  v.int(goal.baseSen, `${path}.baseSen`, 0);
+  v.int(goal.baseDays, `${path}.baseDays`, GOAL_MIN_BASE_DAYS, GOAL_BASE_DAYS);
+  return goal;
+}
+
 function validateReport(v: Validator, value: unknown, path: string): void {
   const r = v.obj(value, path);
   if (!r) return;
@@ -160,6 +180,15 @@ function validateReport(v: Validator, value: unknown, path: string): void {
   v.arr(r.objectivesCompleted, `${path}.objectivesCompleted`)?.forEach((o, i) =>
     v.oneOf(o, OBJECTIVE_IDS, `${path}.objectivesCompleted[${i}]`),
   );
+  if (r.goal !== null) {
+    const goal = validateGoal(v, r.goal, `${path}.goal`);
+    if (goal) {
+      v.bool(goal.achieved, `${path}.goal.achieved`);
+      if (typeof r.revenueSen === 'number' && typeof goal.targetSen === 'number') {
+        v.check(goal.achieved === r.revenueSen >= goal.targetSen, `${path}.goal.achieved: tidak sepadan dengan hasil jualan`);
+      }
+    }
+  }
 }
 
 /**
@@ -259,6 +288,13 @@ export function validateGameState(value: unknown): ValidationResult {
 
   v.oneOf(s.promotion, Object.keys(PROMOTIONS), 'game.promotion');
   if (s.todayEventId !== null) v.oneOf(s.todayEventId, Object.keys(EVENTS), 'game.todayEventId');
+  if (s.goal !== null) {
+    const goal = validateGoal(v, s.goal, 'game.goal');
+    if (goal && typeof s.day === 'number') {
+      const eventId = typeof s.todayEventId === 'string' ? (s.todayEventId as EventId) : null;
+      v.check(goal.kind === goalKindFor(s.day, eventId), 'game.goal.kind: tidak sepadan dengan hari ini');
+    }
+  }
 
   const dayStart = v.obj(s.dayStart, 'game.dayStart');
   if (dayStart) {
@@ -298,7 +334,19 @@ export function validateGameState(value: unknown): ValidationResult {
 
   const stats = v.obj(s.stats, 'game.stats');
   if (stats) {
-    for (const key of ['daysCompleted', 'totalServed', 'bestDayRevenueSen', 'profitableDays', 'profitStreak', 'perfectServiceDays', 'negativeCashStreak', 'loansRepaid']) {
+    for (const key of [
+      'daysCompleted',
+      'totalServed',
+      'bestDayRevenueSen',
+      'profitableDays',
+      'profitStreak',
+      'perfectServiceDays',
+      'negativeCashStreak',
+      'loansRepaid',
+      'goalsMet',
+      'holidayGoalsMet',
+      'perfectWeekends',
+    ]) {
       v.int(stats[key], `game.stats.${key}`, 0);
     }
     v.int(stats.totalRevenueSen, 'game.stats.totalRevenueSen', 0);

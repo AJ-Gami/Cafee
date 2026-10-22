@@ -3,7 +3,7 @@
  * numbers, not real Malaysian market data.
  */
 
-export const SAVE_SCHEMA_VERSION = 3;
+export const SAVE_SCHEMA_VERSION = 4;
 
 export const STARTING_CASH_SEN = 500_000; // RM5,000
 export const STARTING_REPUTATION = 50;
@@ -55,6 +55,20 @@ export const EXTENDED_STAFF_SLOTS = 4;
 export const CANDIDATES_PER_DAY = 3;
 
 export const HISTORY_LIMIT = 60;
+
+/**
+ * Sales goals on Saturdays, Sundays and public holidays: a revenue target above the average of
+ * the days just before (calibrated so a planned weekend — extra stock, staff, a promotion — usually
+ * meets it and an ordinary one usually does not).
+ */
+export const GOAL_BASE_DAYS = 7;
+/** Fewer recent days than this and there is no fair average to set a goal from. */
+export const GOAL_MIN_BASE_DAYS = 3;
+export const WEEKEND_GOAL_BPS = 12_000; // average + 20%
+export const HOLIDAY_GOAL_BPS = 13_500; // average + 35%
+export const GOAL_MIN_TARGET_SEN = 20_000; // RM200
+/** Targets are rounded up to a whole RM10. */
+export const GOAL_ROUNDING_SEN = 1_000;
 export const BANKRUPTCY_NEGATIVE_DAYS = 3;
 /** Fraction of potential customers that must be served to keep reputation steady. */
 export const SERVICE_RATE_TARGET = 0.85;

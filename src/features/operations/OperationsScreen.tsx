@@ -12,6 +12,7 @@ import { weekEndingOn } from '../../game/reports';
 import { capacityView, dayEstimate, fixedCostsView, lastReport, prepChecklist, visibleTodayEvent } from '../../game/selectors';
 import { DayReportView } from '../reports/DayReportView';
 import { DayPlayback } from './DayPlayback';
+import { GoalCard } from './GoalCard';
 import { PromotionPicker } from './PromotionPicker';
 
 export function OperationsScreen() {
@@ -69,6 +70,8 @@ function PrepView() {
           Hari biasa dijangka. Peristiwa mengejut masih boleh berlaku semasa kafe dibuka.
         </Notice>
       )}
+
+      <GoalCard />
 
       <Card>
         <CardTitle title="Senarai semak" subtitle="Pastikan kafe bersedia sebelum dibuka." icon={<Sunrise className="size-5" />} />

@@ -56,7 +56,11 @@ export type ObjectiveId =
   | 'revenue_1200'
   | 'rep_90'
   | 'cash_25000'
-  | 'repay_loan';
+  | 'repay_loan'
+  | 'weekend_goal'
+  | 'holiday_goal'
+  | 'perfect_weekend'
+  | 'goals_5';
 
 /** prep = preparing before opening; closed = today has been settled and its report is ready. */
 export type DayPhase = 'prep' | 'closed';
@@ -182,6 +186,24 @@ export interface ExpenseBreakdown {
   interestSen: number;
 }
 
+export type GoalKind = 'weekend' | 'holiday';
+
+/** A sales goal for a Saturday, Sunday or public holiday, fixed when the day starts. */
+export interface DayGoal {
+  kind: GoalKind;
+  /** Revenue to reach today. */
+  targetSen: number;
+  /** Average daily revenue of the recent days the target is based on. */
+  baseSen: number;
+  /** How many recent days that average covers. */
+  baseDays: number;
+}
+
+export interface DayGoalResult extends DayGoal {
+  /** Revenue reached the target. */
+  achieved: boolean;
+}
+
 export interface DayReport {
   day: number;
   cafeName: string;
@@ -222,6 +244,8 @@ export interface DayReport {
   timeline: TimelineEntry[];
   transactions: Transaction[];
   objectivesCompleted: ObjectiveId[];
+  /** The day's sales goal and whether it was met (null on days without one). */
+  goal: DayGoalResult | null;
 }
 
 export interface GameStats {
@@ -236,6 +260,12 @@ export interface GameStats {
   negativeCashStreak: number;
   /** Bank loans paid off in full. */
   loansRepaid: number;
+  /** Sales goals met (weekends and public holidays). */
+  goalsMet: number;
+  /** Of those, goals met on a public holiday. */
+  holidayGoalsMet: number;
+  /** Weeks in which both the Saturday and the Sunday goal were met. */
+  perfectWeekends: number;
 }
 
 export interface CompletedObjective {
@@ -288,6 +318,8 @@ export interface GameState {
   stats: GameStats;
   /** The café's bank loan, if one is being repaid. At most one at a time. */
   loan: ActiveLoan | null;
+  /** Today's sales goal (Saturdays, Sundays and public holidays), fixed when the day starts. */
+  goal: DayGoal | null;
 }
 
 export type LoanOfferId = 'mikro' | 'perniagaan' | 'pengembangan';

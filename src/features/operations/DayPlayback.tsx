@@ -6,6 +6,7 @@ import { Money } from '../../components/Money';
 import { ProgressBar } from '../../components/ProgressBar';
 import { CLOSE_HOUR, OPEN_HOUR } from '../../game/constants';
 import { formatHour } from '../../game/demand';
+import { GOAL_TITLE } from '../../game/goals';
 import { cumulativeByHour } from '../../game/reports';
 import type { DayReport, TimelineTone } from '../../game/types';
 
@@ -42,11 +43,18 @@ export function DayPlayback({ report, onDone }: { report: DayReport; onDone: () 
   const currentHour = step === 0 ? OPEN_HOUR : step >= totalSteps ? CLOSE_HOUR : OPEN_HOUR + step;
   const snapshot = step === 0 ? { served: 0, revenueSen: 0, lost: 0 } : cumulative[Math.min(step, totalSteps) - 1] ?? { served: 0, revenueSen: 0, lost: 0 };
   const visibleEvents = report.timeline.filter((t) => t.hour <= currentHour).slice(-5);
+  const goal = report.goal;
+  const closed = step >= totalSteps;
+  const goalReached = goal !== null && (closed ? goal.achieved : snapshot.revenueSen >= goal.targetSen);
 
   return (
     <Card className="overflow-hidden">
       <p className="sr-only" role="status">
-        {step >= totalSteps ? `Kafe ditutup. ${snapshot.served} pelanggan dilayan.` : step === 0 ? `Hari ${report.day}: kafe dibuka.` : ''}
+        {closed
+          ? `Kafe ditutup. ${snapshot.served} pelanggan dilayan.${goal ? (goal.achieved ? ' Sasaran jualan dicapai.' : ' Sasaran jualan tidak dicapai.') : ''}`
+          : step === 0
+            ? `Hari ${report.day}: kafe dibuka.`
+            : ''}
       </p>
       <div className="flex items-center gap-3">
         <span className="inline-flex size-11 items-center justify-center rounded-xl bg-sage-700 text-white">
@@ -77,6 +85,22 @@ export function DayPlayback({ report, onDone }: { report: DayReport; onDone: () 
           <dd className="tabular mt-0.5 text-xl font-semibold">{snapshot.lost}</dd>
         </div>
       </dl>
+      {goal ? (
+        <div className="mt-3 rounded-xl bg-cream-100 p-2.5">
+          <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
+            <span className="font-semibold text-espresso-800">{GOAL_TITLE[goal.kind]}</span>
+            <span className="text-espresso-700">
+              <Money sen={snapshot.revenueSen} /> / <Money sen={goal.targetSen} />
+            </span>
+          </p>
+          <ProgressBar value={snapshot.revenueSen} max={goal.targetSen} tone={goalReached ? 'sage' : 'caramel'} label={GOAL_TITLE[goal.kind]} className="mt-1.5" />
+          {goalReached ? (
+            <p className="mt-1 text-sm font-semibold text-sage-700">Sasaran dicapai!</p>
+          ) : closed ? (
+            <p className="mt-1 text-sm font-semibold text-rust-700">Sasaran tidak dicapai</p>
+          ) : null}
+        </div>
+      ) : null}
       <ol className="mt-4 min-h-40 space-y-2">
         {visibleEvents.map((t, i) => (
           <li key={`${t.hour}-${i}-${t.text}`} className={`animate-fade-up rounded-xl border px-3 py-2 text-sm ${TONE[t.tone]}`}>

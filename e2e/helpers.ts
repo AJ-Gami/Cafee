@@ -3,6 +3,8 @@ import { expect, type Locator, type Page } from '@playwright/test';
 export const SAVE_KEY = 'rlt-cafe-empire/save';
 export const BACKUP_KEY = 'rlt-cafe-empire/save-rosak';
 export const COPIES_KEY = 'rlt-cafe-empire/salinan';
+/** The save schema version this build writes. */
+export const SCHEMA_VERSION = 4;
 
 /** Minimal shape of the stored save used by assertions. */
 export interface StoredSave {

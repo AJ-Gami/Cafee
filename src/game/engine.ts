@@ -30,6 +30,7 @@ import {
   takeFromStock,
 } from './economy';
 import { resolveEvent, rollEventForDay, type ResolvedEvent } from './events';
+import { dayGoalFor, GOAL_TITLE, goalResult, isSunday } from './goals';
 import { applyBps, formatRM, sumSen } from './money';
 import { LOAN_OFFERS } from './data/loans';
 import { afterInstallment, installmentDue, newLoan, remainingPrincipal, settlementQuote } from './loans';
@@ -187,8 +188,13 @@ export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME
       perfectServiceDays: 0,
       negativeCashStreak: 0,
       loansRepaid: 0,
+      goalsMet: 0,
+      holidayGoalsMet: 0,
+      perfectWeekends: 0,
     },
     loan: null,
+    // Day 1 is a Monday with no earlier days to set a goal from.
+    goal: null,
   };
 }
 
@@ -651,11 +657,14 @@ export function openCafe(state: GameState, day: number): EngineResult {
     timeline: sortedTimeline,
     transactions: allTx,
     objectivesCompleted: [],
+    goal: state.goal ? goalResult(state.goal, revenueSen) : null,
   };
 
   // --- Stats & status ---
   const anyStockout = productLines.some((l) => l.unmetStockout > 0) || sim.customers.lostStock > 0;
   const negativeCashStreak = closingCashSen < 0 ? state.stats.negativeCashStreak + 1 : 0;
+  const goalMet = report.goal?.achieved === true;
+  const saturdayGoalMet = state.history.find((r) => r.day === day - 1)?.goal?.achieved === true;
   const stats = {
     daysCompleted: state.stats.daysCompleted + 1,
     totalServed: state.stats.totalServed + sim.customers.served,
@@ -667,6 +676,9 @@ export function openCafe(state: GameState, day: number): EngineResult {
     perfectServiceDays: state.stats.perfectServiceDays + (!anyStockout && sim.customers.served >= 50 ? 1 : 0),
     negativeCashStreak,
     loansRepaid: state.stats.loansRepaid + (loanRepaidToday ? 1 : 0),
+    goalsMet: state.stats.goalsMet + (goalMet ? 1 : 0),
+    holidayGoalsMet: state.stats.holidayGoalsMet + (goalMet && report.goal?.kind === 'holiday' ? 1 : 0),
+    perfectWeekends: state.stats.perfectWeekends + (goalMet && isSunday(day) && saturdayGoalMet ? 1 : 0),
   };
 
   const settled: GameState = {
@@ -708,12 +720,14 @@ export function startNextDay(state: GameState, day: number): EngineResult {
   if (day !== state.day) return fail('STALE_DAY', 'Permintaan untuk hari yang salah diabaikan.');
   if (state.phase !== 'closed') return fail('WRONG_PHASE', 'Hari ini belum diproses.');
   const nextDay = state.day + 1;
+  const todayEventId = rollEventForDay(state.seed, nextDay);
   const next: GameState = {
     ...state,
     day: nextDay,
     phase: 'prep',
     promotion: 'none',
-    todayEventId: rollEventForDay(state.seed, nextDay),
+    todayEventId,
+    goal: dayGoalFor(nextDay, todayEventId, state.history),
     dayStart: {
       cashSen: state.cashSen,
       inventorySen: inventoryValue(state.products),
@@ -724,5 +738,6 @@ export function startNextDay(state: GameState, day: number): EngineResult {
     },
     dayTransactions: [],
   };
-  return succeed(next, `Selamat pagi! Hari ${nextDay} (${weekdayName(nextDay)}) bermula.`);
+  const goalNote = next.goal ? ` ${GOAL_TITLE[next.goal.kind]}: jualan ${formatRM(next.goal.targetSen)}.` : '';
+  return succeed(next, `Selamat pagi! Hari ${nextDay} (${weekdayName(nextDay)}) bermula.${goalNote}`);
 }

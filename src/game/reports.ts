@@ -3,6 +3,7 @@
  * transactions and inventory movements. Used by tests and shown in the UI.
  */
 import { reputationPoints } from './demand';
+import { GOAL_TITLE } from './goals';
 import { sumSen } from './money';
 import type { DayReport, TransactionType } from './types';
 
@@ -149,6 +150,7 @@ export function shareText(report: DayReport, formatMoney: (sen: number) => strin
     `Untung bersih: ${formatMoney(report.netProfitSen)}`,
     `Pelanggan dilayan: ${report.customers.served}`,
     `Reputasi: ${reputationPoints(report.reputationAfter)}/100`,
+    ...(report.goal ? [`${GOAL_TITLE[report.goal.kind]} ${formatMoney(report.goal.targetSen)}: ${report.goal.achieved ? 'dicapai' : 'tidak dicapai'}`] : []),
     '',
     'REAL LIFE TYCOON: Café Empire (data simulasi permainan)',
   ].join('\n');
@@ -213,6 +215,8 @@ export type WeekCoverage = 'complete' | 'in_progress' | 'ended' | 'cut_off';
 
 export interface WeeklySummary {
   week: number;
+  /** The café's name on the last day of the week present in the history. */
+  cafeName: string;
   firstDay: number;
   lastDay: number;
   /** Days of this week present in the report history. */
@@ -243,6 +247,9 @@ export interface WeeklySummary {
   bestDay: { day: number; revenueSen: number };
   reputationStart: number;
   reputationEnd: number;
+  /** Days of the week that had a sales goal (weekends and public holidays), and how many were met. */
+  goalsSet: number;
+  goalsMet: number;
   /** Against the previous week, only when both weeks are complete. */
   vsPrevious: WeekComparison | null;
 }
@@ -256,6 +263,7 @@ function summarizeWeek(week: number, days: readonly DayReport[], latestDay: numb
   const best = days.reduce((a, b) => (b.revenueSen > a.revenueSen ? b : a));
   return {
     week,
+    cafeName: last.cafeName,
     firstDay: (week - 1) * DAYS_PER_WEEK + 1,
     lastDay: week * DAYS_PER_WEEK,
     daysPlayed: days.length,
@@ -284,6 +292,8 @@ function summarizeWeek(week: number, days: readonly DayReport[], latestDay: numb
     bestDay: { day: best.day, revenueSen: best.revenueSen },
     reputationStart: first.reputationBefore,
     reputationEnd: last.reputationAfter,
+    goalsSet: days.filter((r) => r.goal !== null).length,
+    goalsMet: days.filter((r) => r.goal?.achieved === true).length,
   };
 }
 
@@ -321,4 +331,21 @@ export function weeklySummaries(history: readonly DayReport[], gameActive = true
 export function weekEndingOn(history: readonly DayReport[], day: number): WeeklySummary | null {
   if (!isWeekEnd(day) || !history.some((r) => r.day === day)) return null;
   return weeklySummaries(history).find((w) => w.lastDay === day) ?? null;
+}
+
+/** Plain-text weekly summary for sharing. Clearly labelled as simulated game data. */
+export function weekShareText(w: WeeklySummary, formatMoney: (sen: number) => string): string {
+  const signed = (n: number): string => (n > 0 ? `+${n}` : String(n));
+  return [
+    `☕ ${w.cafeName} — Minggu ${w.week} (Hari ${w.firstDay}–${w.lastDay})`,
+    ...(w.complete ? [] : [`Data ${w.daysPlayed}/${DAYS_PER_WEEK} hari (Hari ${w.firstPlayedDay}–${w.lastPlayedDay})`]),
+    `Jualan: ${formatMoney(w.revenueSen)}`,
+    `Untung bersih: ${formatMoney(w.netProfitSen)}`,
+    `Pelanggan dilayan: ${w.served}`,
+    `Hari untung: ${w.profitableDays}/${w.daysPlayed}`,
+    ...(w.goalsSet > 0 ? [`Sasaran jualan dicapai: ${w.goalsMet}/${w.goalsSet}`] : []),
+    ...(w.vsPrevious?.revenueChangePct != null ? [`Jualan berbanding minggu lalu: ${signed(w.vsPrevious.revenueChangePct)}%`] : []),
+    '',
+    'REAL LIFE TYCOON: Café Empire (data simulasi permainan)',
+  ].join('\n');
 }

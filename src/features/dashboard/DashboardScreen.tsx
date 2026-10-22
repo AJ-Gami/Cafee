@@ -18,6 +18,7 @@ import { levelInfo } from '../../game/objectives';
 import { historySeries } from '../../game/reports';
 import { capacityView, currentInventoryValue, dayEstimate, lastReport, objectiveViews, productViews, visibleTodayEvent } from '../../game/selectors';
 import { ProfitMiniChart } from '../finance/LazyCharts';
+import { GoalCard } from '../operations/GoalCard';
 
 export function DashboardScreen() {
   const { game } = useGame();
@@ -168,6 +169,8 @@ export function DashboardScreen() {
           )}
         </Card>
       ) : null}
+
+      <GoalCard />
 
       {/* Alerts */}
       {game.phase === 'prep' && (outOfStock.length > 0 || lowStock.length > 0) && !isNewPlayer ? (

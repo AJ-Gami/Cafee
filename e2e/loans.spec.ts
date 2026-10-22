@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { gotoApp, navButton, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, toast, writeSaveAsOtherTab } from './helpers';
+import { gotoApp, navButton, openCafeAndSkip, readSave, restockToForecast, SAVE_KEY, SCHEMA_VERSION, toast, writeSaveAsOtherTab } from './helpers';
 
 test('take a bank loan, pay installments at each close, then settle it early', async ({ page }) => {
   await gotoApp(page, '#/kewangan/pinjaman');
@@ -61,7 +61,7 @@ test('a save from the previous version (v2) is migrated on load', async ({ page 
   await expect(page.getByText('Simpanan versi 2 telah dikemas kini ke format terkini.')).toBeVisible();
   await expect(page.locator('header')).toContainText('RM4,321.00');
   const save = await readSave(page);
-  expect(save?.schemaVersion).toBe(3);
+  expect(save?.schemaVersion).toBe(SCHEMA_VERSION);
   expect(save?.game.dayStart.debtSen).toBe(0);
 });
 
