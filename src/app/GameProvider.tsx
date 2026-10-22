@@ -133,6 +133,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const fromOldBuild = result.migratedFrom !== null;
     let ourCopy = '';
     const ours = gameRef.current;
+    // The last game taken from that build: what both tabs shared, so a choice either made since
+    // (including undoing one) is measured against it.
+    const shared = fromOldSaveRef.current;
     if (fromOldBuild) {
       const theirs = result.game;
       if (resolveOldBuildWrite(ours, theirs) === 'ours') {
@@ -143,8 +146,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
           lastSaveIdRef.current = saved.saveId;
           lastWrittenRef.current = ours;
         }
-        const keptTheirs = keepCopy(storage, theirs, new Date(), ours);
-        const theirsHeldPlay = !isUntouched(theirs) && !isEarlierStateOf(theirs, ours);
+        const keptTheirs = keepCopy(storage, theirs, new Date(), ours, shared ?? true);
+        const theirsHeldPlay = !isUntouched(theirs) && !isEarlierStateOf(theirs, ours, shared ?? true);
         const what =
           theirs.seed === ours.seed
             ? `kemajuan yang kurang (Hari ${theirs.day})`
@@ -165,9 +168,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }
       // Unchanged since it was read from the old build's own save, ours made no choices of its own;
       // if theirs carries on from it, ours is just a point on that tab's line of play.
-      const continuedByTheirs = isEarlierStateOf(ours, theirs, ours !== fromOldSaveRef.current);
+      const choices = ours === shared ? false : (shared ?? true);
+      const continuedByTheirs = isEarlierStateOf(ours, theirs, choices);
       if (!isUntouched(ours) && !continuedByTheirs) {
-        ourCopy = keepCopy(storage, ours, new Date(), theirs)
+        ourCopy = keepCopy(storage, ours, new Date(), theirs, choices)
           ? ` Permainan tab ini sebelumnya (${ours.cafeName}, Hari ${ours.day}) disimpan dan boleh dipulihkan dalam Tetapan.`
           : ` Permainan tab ini sebelumnya (${ours.cafeName}, Hari ${ours.day}) tidak dapat disimpan.`;
       }
@@ -237,7 +241,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
           : isUntouched(result.game)
             ? (readCopies(storage).find((c) => compareProgress(c.game, result.game) > 0)?.game ?? null)
             : null;
-    if (ahead) {
+    // Only an active café counts as progress to point to; a bankrupt one was left behind.
+    if (ahead && ahead.status === 'active') {
       setBootNotice({
         kind: 'copy',
         message: `Salinan kemajuan yang lebih jauh ditemui (${ahead.cafeName}, Hari ${ahead.day}). Anda boleh memulihkannya dalam Tetapan.`,

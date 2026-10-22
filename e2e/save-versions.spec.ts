@@ -213,3 +213,15 @@ test('menu changes in an older-build tab do not pile up copies of the same game'
   await expect(a.getByText(/Permainan tab ini sebelumnya/)).toHaveCount(0);
   expect(await keptCopies(a)).toEqual([]);
 });
+
+test('a bankrupt café set aside is not announced as progress further ahead', async ({ page }) => {
+  await gotoApp(page);
+  await page.evaluate((key) => {
+    const save = JSON.parse(localStorage.getItem(key) ?? '{}');
+    Object.assign(save.game, { seed: 4243, day: 5, lastSettledDay: 4, status: 'bankrupt' });
+    localStorage.setItem('rlt-cafe-empire/save-rosak', JSON.stringify(save));
+  }, SAVE_KEY);
+  await page.reload();
+  await expect(page.getByRole('navigation', { name: 'Navigasi utama' })).toBeVisible();
+  await expect(page.getByText(/Salinan kemajuan yang lebih jauh ditemui/)).toHaveCount(0, { timeout: 1_000 });
+});

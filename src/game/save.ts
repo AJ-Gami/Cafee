@@ -313,29 +313,46 @@ function startsWith(list: readonly unknown[], prefix: readonly unknown[]): boole
  * transactions would not be a prefix of `later`'s.
  */
 /**
- * Choices with no transaction that `g` made itself on its current day, compared with how the day
- * started: every day starts without a promotion, with the prices and name the previous day was
- * settled with (the defaults on day 1). A difference elsewhere was made by the other copy. (The
- * menu's on/off switches are not recorded per day, so they cannot be told apart and are not compared.)
+ * What a copy's choices with no transaction (name, promotion, prices) are measured against:
+ * `true` — how its day started (recorded in dayStart, or the defaults on day 1); a game state —
+ * the last state both copies are known to have shared (used when it is on the same day); `false`
+ * — the copy is known to have made no such choice at all.
  */
-function ownChoices(g: GameState): { renamed: boolean; promoted: boolean; repriced: ProductId[] } {
-  const start = g.history.find((r) => r.day === g.day - 1);
-  const startName = start ? start.cafeName : g.day === 1 ? DEFAULT_CAFE_NAME : g.cafeName;
-  const startDiscountBps = start ? PROMOTIONS[start.promotionId].discountBps : 0;
-  const repriced = PRODUCT_IDS.filter((id) => {
-    const price = g.products[id].priceSen;
-    if (start) {
-      const line = start.products.find((l) => l.productId === id);
-      return !!line && line.salePriceSen !== price - applyBps(price, startDiscountBps);
-    }
-    return g.day === 1 && price !== PRODUCTS[id].defaultPriceSen;
-  });
-  return { renamed: g.cafeName !== startName, promoted: g.promotion !== 'none', repriced };
+export type ChoiceReference = boolean | GameState;
+
+/**
+ * Choices with no transaction that `g` made itself since `ref` (see ChoiceReference). A difference
+ * elsewhere was made by the other copy. Returns null when the reference is unknown (e.g. an older
+ * save from before day starts were recorded): then every difference has to count. The menu's on/off
+ * switches are not recorded, so they cannot be told apart and are not compared.
+ */
+function ownChoices(g: GameState, ref: Exclude<ChoiceReference, false>): { renamed: boolean; promoted: boolean; repriced: ProductId[] } | null {
+  let base: { name: string; promotion: GameState['promotion']; price: (id: ProductId) => number } | null = null;
+  if (typeof ref === 'object' && ref.seed === g.seed && ref.day === g.day && ref.phase === 'prep') {
+    base = { name: ref.cafeName, promotion: ref.promotion, price: (id) => ref.products[id].priceSen };
+  } else if (g.dayStart.cafeName !== undefined && g.dayStart.priceSen) {
+    const prices = g.dayStart.priceSen;
+    base = { name: g.dayStart.cafeName, promotion: 'none', price: (id) => prices[id] };
+  } else if (g.day === 1) {
+    base = { name: DEFAULT_CAFE_NAME, promotion: 'none', price: (id) => PRODUCTS[id].defaultPriceSen };
+  }
+  if (!base) return null;
+  const b = base;
+  return {
+    renamed: g.cafeName !== b.name,
+    promoted: g.promotion !== b.promotion,
+    repriced: PRODUCT_IDS.filter((id) => g.products[id].priceSen !== b.price(id)),
+  };
 }
 
-function laterOnlyContinued(earlier: GameState, later: GameState, checkChoices: boolean): boolean {
-  if (!checkChoices) return true;
-  const own = ownChoices(earlier);
+/** As ownChoices, counting everything as `g`'s own when the reference is unknown. */
+function ownChoicesOrAll(g: GameState, ref: Exclude<ChoiceReference, false>): { renamed: boolean; promoted: boolean; repriced: readonly ProductId[] } {
+  return ownChoices(g, ref) ?? { renamed: true, promoted: true, repriced: PRODUCT_IDS };
+}
+
+function laterOnlyContinued(earlier: GameState, later: GameState, choices: ChoiceReference): boolean {
+  if (choices === false) return true;
+  const own = ownChoicesOrAll(earlier, choices);
   if (own.renamed && later.cafeName !== earlier.cafeName) return false;
   if (own.promoted && later.promotion !== earlier.promotion) return false;
   if (own.repriced.some((id) => later.products[id].priceSen !== earlier.products[id].priceSen)) return false;
@@ -357,9 +374,9 @@ function laterOnlyContinued(earlier: GameState, later: GameState, checkChoices: 
  * transaction, as that day's report shows them, are `earlier`'s (name, promotion, prices), and
  * nobody `earlier` let go that day was still paid by `later` that day.
  */
-function settledWithSameChoices(earlier: GameState, report: DayReport, checkChoices: boolean): boolean {
-  if (!checkChoices) return true;
-  const own = ownChoices(earlier);
+function settledWithSameChoices(earlier: GameState, report: DayReport, choices: ChoiceReference): boolean {
+  if (choices === false) return true;
+  const own = ownChoicesOrAll(earlier, choices);
   if (own.renamed && report.cafeName !== earlier.cafeName) return false;
   // A promotion skipped for lack of cash is reported as none, so the choice cannot be checked.
   if (own.promoted && !report.promotionSkipped && report.promotionId !== earlier.promotion) return false;
@@ -404,8 +421,8 @@ function sameStartingPoint(earlier: GameState, later: GameState): boolean {
 export function isEarlierStateOf(
   earlier: GameState,
   later: GameState,
-  /** false: ignore choices that record no transaction (when `earlier` is known to have made none). */
-  checkChoices = true,
+  /** What `earlier`'s choices without a transaction are measured against (see ChoiceReference). */
+  choices: ChoiceReference = true,
 ): boolean {
   if (earlier.seed !== later.seed || compareProgress(earlier, later) > 0) return false;
   const lastReport = earlier.history[earlier.history.length - 1];
@@ -417,15 +434,15 @@ export function isEarlierStateOf(
   }
   if (earlier.phase === 'closed') {
     // After closing, only a rename can still change: `later` must not have lost it.
-    return !checkChoices || earlier.cafeName === lastReport?.cafeName || earlier.cafeName === later.cafeName;
+    return choices === false || earlier.cafeName === lastReport?.cafeName || earlier.cafeName === later.cafeName;
   }
   if (later.lastSettledDay >= earlier.day) {
     const report = later.history.find((r) => r.day === earlier.day);
     // Preparation spending comes first in that day's transactions.
-    return !!report && startsWith(report.transactions, earlier.dayTransactions) && settledWithSameChoices(earlier, report, checkChoices);
+    return !!report && startsWith(report.transactions, earlier.dayTransactions) && settledWithSameChoices(earlier, report, choices);
   }
   // Both are preparing the same day: `later` may only have continued from `earlier`.
-  return startsWith(later.dayTransactions, earlier.dayTransactions) && laterOnlyContinued(earlier, later, checkChoices);
+  return startsWith(later.dayTransactions, earlier.dayTransactions) && laterOnlyContinued(earlier, later, choices);
 }
 
 /**
@@ -476,8 +493,15 @@ export function isUntouched(g: GameState): boolean {
  * the limit the oldest go. Returns true when the game's play is restorable from the copies
  * (added, or already contained in a later copy).
  */
-export function keepCopy(storage: StorageLike | null, game: GameState, now: Date = new Date(), current?: GameState): boolean {
-  if (!storage || isUntouched(game) || (current && isEarlierStateOf(game, current))) return false;
+export function keepCopy(
+  storage: StorageLike | null,
+  game: GameState,
+  now: Date = new Date(),
+  current?: GameState,
+  /** What `game`'s choices are measured against when compared with `current`. */
+  choices: ChoiceReference = true,
+): boolean {
+  if (!storage || isUntouched(game) || (current && isEarlierStateOf(game, current, choices))) return false;
   try {
     const copies: { item: unknown; game: GameState }[] = [];
     // Copies written by a newer version cannot be read here; keep them untouched for that version.

@@ -33,10 +33,12 @@ test.describe('keyboard use of sheets and dialogs', () => {
   test('a sheet with no controls can be scrolled with the keyboard alone', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 600 });
     await openWeek(page);
-    const region = page.getByRole('region', { name: 'Ringkasan Minggu 1' }).first();
+    const region = page.getByRole('region', { name: 'Kandungan: Ringkasan Minggu 1' });
     expect(await region.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
     await page.keyboard.press('Tab');
     await expect(region).toBeFocused();
+    // The app's own focus outline, not a fainter one.
+    expect(await region.evaluate((el) => getComputedStyle(el).outlineWidth)).toBe('3px');
     await page.keyboard.press('PageDown');
     await expect.poll(() => region.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   });
@@ -65,5 +67,7 @@ test.describe('keyboard use of sheets and dialogs', () => {
     await page.getByRole('alertdialog').getByRole('button', { name: 'Beli semua' }).press('Enter');
     await expect(page.getByRole('button', { name: /Stok sudah ikut anggaran/ })).toBeDisabled();
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('MAIN');
+    // Without moving the page: the screen's title stays clear of the sticky header.
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
   });
 });

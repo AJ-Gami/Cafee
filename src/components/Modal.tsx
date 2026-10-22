@@ -99,7 +99,8 @@ function useModalBehaviour(
       previouslyFocused?.focus?.();
       if (document.activeElement !== previouslyFocused || !previouslyFocused?.isConnected) {
         const fallback = modalStack[modalStack.length - 1]?.focusTarget ?? document.querySelector<HTMLElement>('main[tabindex]');
-        fallback?.focus();
+        // Without scrolling: moving the page under the sticky header would hide the screen's title.
+        fallback?.focus({ preventScroll: true });
       }
     };
   }, [open, panelRef, focusTargetRef]);
@@ -196,8 +197,10 @@ export function Sheet({
           ref={bodyRef}
           tabIndex={0}
           role="region"
-          aria-labelledby={titleId}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-caramel-500"
+          // Named apart from the dialog and from any card inside that repeats the title.
+          aria-label={`Kandungan: ${title}`}
+          // The app's own focus outline (3px), drawn inside so the panel edge cannot clip it.
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 focus-visible:[outline-offset:-3px]"
         >
           {children}
         </div>

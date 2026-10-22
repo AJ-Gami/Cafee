@@ -143,6 +143,10 @@ export function createInitialProducts(): Record<ProductId, ProductState> {
   ) as Record<ProductId, ProductState>;
 }
 
+function menuPrices(products: Record<ProductId, ProductState>): Record<ProductId, number> {
+  return Object.fromEntries(PRODUCT_IDS.map((id) => [id, products[id].priceSen])) as Record<ProductId, number>;
+}
+
 export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME): GameState {
   const products = createInitialProducts();
   return {
@@ -159,7 +163,14 @@ export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME
     upgrades: [],
     promotion: 'none',
     todayEventId: rollEventForDay(seed >>> 0, 1),
-    dayStart: { cashSen: STARTING_CASH_SEN, inventorySen: inventoryValue(products), debtSen: 0, staffNames: [STARTING_STAFF.name] },
+    dayStart: {
+      cashSen: STARTING_CASH_SEN,
+      inventorySen: inventoryValue(products),
+      debtSen: 0,
+      staffNames: [STARTING_STAFF.name],
+      cafeName: sanitizeCafeName(cafeName) ?? DEFAULT_CAFE_NAME,
+      priceSen: menuPrices(products),
+    },
     dayTransactions: [],
     txSeq: 1,
     lastSettledDay: 0,
@@ -708,6 +719,8 @@ export function startNextDay(state: GameState, day: number): EngineResult {
       inventorySen: inventoryValue(state.products),
       debtSen: remainingPrincipal(state.loan),
       staffNames: state.staff.map((s) => s.name),
+      cafeName: state.cafeName,
+      priceSen: menuPrices(state.products),
     },
     dayTransactions: [],
   };

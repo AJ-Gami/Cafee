@@ -272,6 +272,11 @@ export function validateGameState(value: unknown): ValidationResult {
         names.forEach((n, i) => v.str(n, `game.dayStart.staffNames[${i}]`, 60));
       }
     }
+    if (dayStart.cafeName !== undefined) v.str(dayStart.cafeName, 'game.dayStart.cafeName', CAFE_NAME_MAX_LENGTH);
+    if (dayStart.priceSen !== undefined) {
+      const prices = v.obj(dayStart.priceSen, 'game.dayStart.priceSen');
+      if (prices) for (const id of PRODUCT_IDS) v.int(prices[id], `game.dayStart.priceSen.${id}`, MIN_PRICE_SEN, MAX_PRICE_SEN);
+    }
   }
 
   v.arr(s.dayTransactions, 'game.dayTransactions')?.forEach((t, i) => validateTransaction(v, t, `game.dayTransactions[${i}]`));

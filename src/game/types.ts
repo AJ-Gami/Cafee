@@ -253,6 +253,12 @@ export interface DayStartSnapshot {
    * firing during preparation never renames today's candidates. Absent in older saves.
    */
   staffNames?: string[];
+  /**
+   * The café's name and menu prices when the day started (every day starts without a promotion),
+   * so changes made during the day can be told from what the day began with. Absent in older saves.
+   */
+  cafeName?: string;
+  priceSen?: Record<ProductId, number>;
 }
 
 export interface GameState {

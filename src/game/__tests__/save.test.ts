@@ -629,3 +629,58 @@ describe('copies: who made a change, and storage that stays full', () => {
     expect(data.get(COPIES_KEY)).toBe(copiesText);
   });
 });
+
+describe('copies: choices measured from a known starting point', () => {
+  const fork = playDays(newGame(), 2).state; // day 3 preparation
+
+  it('records the name and prices each day starts with', () => {
+    expect(newGame().dayStart).toMatchObject({ cafeName: 'Kopi Kita', priceSen: { kopi_o: 350, latte: 700 } });
+    const renamed = expectOk(renameCafe(settle(expectOk(setPrice(fork, 'latte', 760)).state).state, 'Kafe Petang')).state;
+    expect(expectOk(startNextDay(renamed, 3)).state.dayStart).toMatchObject({ cafeName: 'Kafe Petang', priceSen: { latte: 760 } });
+    expect(validateGameState({ ...structuredClone(fork), dayStart: { ...fork.dayStart, priceSen: { kopi_o: -1 } } }).ok).toBe(false);
+  });
+
+  it('counts undoing a choice the other copy still has, when measured from what both shared', () => {
+    const shared = expectOk(setPromotion(fork, 'flyers')).state;
+    const theirs = stockAll(shared, 5);
+    for (const ours of [
+      expectOk(setPromotion(shared, 'none')).state,
+      expectOk(setPrice(expectOk(setPromotion(fork, 'flyers')).state, 'latte', 900)).state, // a change of its own
+    ]) {
+      expect(isEarlierStateOf(ours, theirs, shared)).toBe(false);
+      expect(keepCopy(createMemoryStorage(), ours, new Date(), theirs, shared)).toBe(true);
+    }
+    // Measured from the same shared state, a copy that changed nothing is still an earlier point.
+    expect(isEarlierStateOf(shared, theirs, shared)).toBe(true);
+    // A price the other tab set, put back to the day's starting price here: invisible from the day
+    // start, but a change from what both shared.
+    const sharedPrice = expectOk(setPrice(fork, 'latte', 900)).state;
+    const undone = expectOk(setPrice(sharedPrice, 'latte', fork.products.latte.priceSen)).state;
+    expect(isEarlierStateOf(undone, stockAll(sharedPrice, 5))).toBe(true);
+    expect(isEarlierStateOf(undone, stockAll(sharedPrice, 5), sharedPrice)).toBe(false);
+  });
+
+  it('counts a rename back after a rename made once the previous day had closed', () => {
+    const closed = expectOk(renameCafe(settle(stockAll(fork, 5)).state, 'Kafe Petang')).state;
+    const next = expectOk(startNextDay(closed, 3)).state;
+    const ours = expectOk(renameCafe(next, 'Kopi Kita')).state;
+    expect(isEarlierStateOf(ours, stockAll(next, 5))).toBe(false);
+    expect(isEarlierStateOf(next, expectOk(renameCafe(stockAll(next, 5), 'Kafe Malam')).state)).toBe(true);
+  });
+
+  it('counts a 1-sen price change the day after a discount promotion', () => {
+    let g = expectOk(setPromotion(expectOk(setPrice(stockAll(newGame(), 30), 'kopi_o', 455)).state, 'discount10')).state;
+    g = expectOk(startNextDay(settle(g).state, 1)).state;
+    expect(isEarlierStateOf(expectOk(setPrice(g, 'kopi_o', 454)).state, stockAll(g, 5))).toBe(false);
+  });
+
+  it('counts every difference when the day start is unknown (game migrated from v1)', () => {
+    const migrated = migrateSave({ version: 1, seed: 777, day: 5, cash: 4200.5, reputation: 60, products: [], staff: [], upgrades: [] });
+    if (!migrated.ok) throw new Error(migrated.error);
+    const g = migrated.game as GameState;
+    const later = stockAll(g, 5);
+    expect(isEarlierStateOf(expectOk(renameCafe(g, 'Kafe Ali')).state, later)).toBe(false);
+    expect(isEarlierStateOf(expectOk(setPrice(g, 'latte', 990)).state, later)).toBe(false);
+    expect(isEarlierStateOf(g, later)).toBe(true);
+  });
+});
