@@ -161,7 +161,7 @@ src/
 npm test
 ```
 
-There are 156 tests in 9 suites (`src/game/__tests__`):
+There are 155 tests in 9 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -169,7 +169,7 @@ There are 156 tests in 9 suites (`src/game/__tests__`):
 | `economy.test.ts` | purchase quotes, bulk discounts, event surcharges, WAC costing, no negative inventory |
 | `engine.test.ts` | starting state, purchases and insufficient funds, atomic batch buys, storage limits, price bounds, disabled products, revenue/COGS/net profit, cash balance, unsold stock is not COGS, spoilage, multi-seed 25-day reconciliation, capacity limits, price elasticity, one settlement per day, phase locking, promotions (including free promotions while cash is negative), staff (candidate list unchanged by hires and fires, unique names), upgrades, bankruptcy |
 | `events.test.ts` | reproducible rolls, hidden surprises, surprise effects starting at the event hour, effects of rain/festival/heatwave/power outage/breakdown/inspection (+mitigation)/contest/office order/reviewer/price spike |
-| `save.test.ts` | save/load round trips, export/import (round trip, file naming, invalid and oversized files, v1 import), save ids and other-tab write detection, malformed JSON, invalid values, newer-version saves left untouched, kept copies (order, de-duplication, limit, the old backup key, removal, full storage, dropped before the current save fails), comparing two copies of a game (progress order, earlier point vs diverging branch, field order written by another build, mid-preparation snapshots, changes without a transaction, which game stays), throwing/unavailable storage, v1 migration, reset |
+| `save.test.ts` | save/load round trips, export/import (round trip, file naming, invalid and oversized files, v1 import), save ids and other-tab write detection, malformed JSON, invalid values, newer-version saves left untouched, kept copies (order, de-duplication, limit, the old backup key, removal, full storage, dropped before the current save fails), comparing two copies of a game (progress order, earlier point vs diverging branch, field order written by another build, mid-preparation snapshots, changes without a transaction measured from the shared point or the day's recorded starting name and prices, which game stays), throwing/unavailable storage, v1 migration, reset |
 | `loans.test.ts` | exact installment schedules, taking a loan (financing, level lock, one at a time, phase lock), installments at each close until repaid, charges when cash is short, fixed-cost forecast, free same-day cancellation, early settlement, borrowed cash excluded from savings objectives, v2→v3 migration, loan validation |
 | `weekly.test.ts` | week numbering, weekly totals equal their daily reports, comparisons only between complete weeks, partial (history-limited) vs in-progress weeks, the week ending on a day |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
