@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SAVE_SCHEMA_VERSION, STARTING_CASH_SEN } from '../constants';
-import { createNewGame, hireStaff, startNextDay } from '../engine';
+import { createNewGame, fireStaff, hireStaff, startNextDay } from '../engine';
 import { hiringCandidates } from '../selectors';
 import type { GameState } from '../types';
 import {
@@ -465,5 +465,46 @@ describe('comparing copies written by different builds', () => {
     // The same game written by another build is one copy, not two.
     storage.setItem(BACKUP_KEY, exportSave(other));
     expect(readCopies(storage)).toHaveLength(2);
+  });
+});
+
+describe('copies after team changes, trimmed history and newer versions', () => {
+  const day1 = stockAll(newGame(), 20);
+  const candidate = hiringCandidates(day1)[0]!;
+  const twoStaff = expectOk(startNextDay(settle(expectOk(hireStaff(day1, candidate.id)).state).state, 1)).state;
+
+  it('a firing (no transaction) is play the other copy lacks', () => {
+    const fired = expectOk(fireStaff(twoStaff, candidate.id)).state;
+    const bought = stockAll(twoStaff, 5);
+    expect(isEarlierStateOf(fired, bought)).toBe(false);
+    expect(keepCopy(createMemoryStorage(), fired, new Date(), bought)).toBe(true);
+  });
+
+  it('a snapshot from before a later firing or hiring is still an earlier point', () => {
+    const later = expectOk(fireStaff(stockAll(twoStaff, 3), candidate.id)).state;
+    expect(isEarlierStateOf(twoStaff, later)).toBe(true);
+    const next = hiringCandidates(twoStaff).find((c) => !twoStaff.staff.some((s) => s.id === c.id))!;
+    const fired = expectOk(fireStaff(twoStaff, candidate.id)).state;
+    expect(isEarlierStateOf(fired, expectOk(hireStaff(fired, next.id)).state)).toBe(true);
+  });
+
+  it('an old snapshot whose history was trimmed never pushes a real copy out', () => {
+    const early = playDays(newGame(), 3).state;
+    const late = playDays(early, 61).state;
+    expect(late.history[0]!.day).toBeGreaterThan(early.lastSettledDay); // cannot be checked exactly
+    const storage = createMemoryStorage();
+    const others = [3, 2, 1].map((seed) => playDays(newGame(seed), 2).state);
+    for (const g of others) keepCopy(storage, g);
+    expect(keepCopy(storage, early, new Date(), late)).toBe(false);
+    expect(readCopies(storage).map((c) => c.game.seed)).toEqual([1, 2, 3]);
+  });
+
+  it('leaves copies written by a newer version untouched', () => {
+    const storage = createMemoryStorage();
+    const future = { schemaVersion: SAVE_SCHEMA_VERSION + 1, savedAt: 'x', game: { schemaVersion: SAVE_SCHEMA_VERSION + 1, from: 'later build' } };
+    storage.setItem(COPIES_KEY, JSON.stringify([future]));
+    expect(keepCopy(storage, playDays(newGame(7), 2).state)).toBe(true);
+    const list = JSON.parse(storage.getItem(COPIES_KEY) ?? '[]') as { schemaVersion: number }[];
+    expect(list.map((e) => e.schemaVersion)).toEqual([SAVE_SCHEMA_VERSION, SAVE_SCHEMA_VERSION + 1]);
   });
 });

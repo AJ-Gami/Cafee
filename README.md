@@ -149,7 +149,7 @@ src/
 - **Validation:** `validateGameState()` checks types, integer money, ranges, known IDs, phase consistency and report structure.
 - **Write ids:** each write stores a random `saveId` before the game data, so `peekSaveId()` can detect another tab's write without parsing the whole save.
 - **Recovery:** if the save is malformed or invalid, the raw text is copied to `rlt-cafe-empire/save-rosak`, a new game starts and the player sees a notice.
-- **Kept copies:** `rlt-cafe-empire/salinan` holds up to 3 restorable saves set aside by this build (newest first). Older builds overwrite `save-rosak` whenever they meet a save they cannot read, so the current build copies anything restorable from there into its own list as soon as it sees it (at start-up and on another tab's write). A copy that is only an earlier point of another (compared by content, whichever build wrote it, including same-day changes that record no transaction) is never kept, so snapshots cannot push real progress out. Settings lists every copy that is not just an earlier point of the current game or of another copy, with when it was saved, Restore and Remove, and a start-up notice points to a copy that is further ahead than the loaded game. A late-game save is about 0.3 MB of text; if storage is ever full, the oldest kept copies are dropped before the current game would fail to save.
+- **Kept copies:** `rlt-cafe-empire/salinan` holds up to 3 restorable saves set aside by this build (newest first). Older builds overwrite `save-rosak` whenever they meet a save they cannot read, so the current build copies anything restorable from there into its own list as soon as it sees it (at start-up and on another tab's write). A copy that is only an earlier point of another (compared by content, whichever build wrote it, including same-day changes that record no transaction such as a firing) is never kept, so snapshots cannot push real progress out. Settings lists every copy that is not just an earlier point of the current game or of another copy, with when it was saved, Restore and Remove, and a start-up notice points to a copy that is further ahead than the loaded game. Beyond three copies, one that is merely behind the game in play goes first (e.g. an old snapshot whose history has been trimmed), then the oldest; copies written by a newer version are left untouched. A late-game save is about 0.3 MB of text; if storage is ever full, the oldest kept copies are dropped before the current game would fail to save.
 - **Newer versions:** a save written by a newer version is never treated as corrupt: the game shows a read-only "please reload" screen and neither autosaves nor allows actions, so the newer save is left untouched.
 - **Loan consistency:** an active loan must match its own schedule (payments made = days closed since it was taken, amounts paid = equal installments so far, opening debt = remaining principal), so every later close keeps producing a valid save. If `localStorage` is unavailable (for example in private mode), the game still runs in memory and shows a warning.
 
@@ -161,7 +161,7 @@ src/
 npm test
 ```
 
-There are 135 tests in 9 suites (`src/game/__tests__`):
+There are 139 tests in 9 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|

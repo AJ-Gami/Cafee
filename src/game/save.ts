@@ -303,17 +303,22 @@ function startsWith(list: readonly unknown[], prefix: readonly unknown[]): boole
 }
 
 /**
- * Choices that record no transaction (name, prices, menu, promotion, firing) are the same in
- * `later`. Hiring and upgrades do record one, so `later` may have more staff or upgrades.
+ * For two copies preparing the same day: choices that record no transaction (name, prices, menu,
+ * promotion) are the same in `later`, and every team member `later` has that `earlier` lacks was
+ * hired by `later` afterwards (hiring records a transaction). Team members `earlier` has and
+ * `later` lacks were let go by `later` afterwards; had `earlier` hired them instead, its own
+ * transactions would not be a prefix of `later`'s.
  */
-function sameUntrackedChoices(earlier: GameState, later: GameState): boolean {
-  const laterStaff = new Set(later.staff.map((s) => s.id));
-  return (
-    earlier.cafeName === later.cafeName &&
-    earlier.promotion === later.promotion &&
-    earlier.staff.every((s) => laterStaff.has(s.id)) &&
-    PRODUCT_IDS.every((id) => earlier.products[id].priceSen === later.products[id].priceSen && earlier.products[id].enabled === later.products[id].enabled)
+function laterOnlyContinued(earlier: GameState, later: GameState): boolean {
+  if (earlier.cafeName !== later.cafeName || earlier.promotion !== later.promotion) return false;
+  const sameMenu = PRODUCT_IDS.every(
+    (id) => earlier.products[id].priceSen === later.products[id].priceSen && earlier.products[id].enabled === later.products[id].enabled,
   );
+  if (!sameMenu) return false;
+  const earlierStaff = new Set(earlier.staff.map((s) => s.id));
+  const joined = later.staff.filter((s) => !earlierStaff.has(s.id));
+  const hiresAfter = later.dayTransactions.slice(earlier.dayTransactions.length).filter((t) => t.type === 'hiring').length;
+  return joined.every((s) => s.hiredDay === earlier.day) && joined.length <= hiresAfter;
 }
 
 /**
@@ -337,8 +342,8 @@ export function isEarlierStateOf(earlier: GameState, later: GameState): boolean 
       const laterTx = laterSettledThatDay ? later.history.find((r) => r.day === earlier.day)?.transactions : later.dayTransactions;
       if (!laterTx || !startsWith(laterTx, earlier.dayTransactions)) return false;
     }
-    // While both are preparing the same day, choices that record no transaction must match too.
-    if (!laterSettledThatDay && !sameUntrackedChoices(earlier, later)) return false;
+    // While both are preparing the same day, `later` may only have continued from `earlier`.
+    if (!laterSettledThatDay && !laterOnlyContinued(earlier, later)) return false;
   }
   return true;
 }
@@ -391,14 +396,38 @@ function isUntouched(g: GameState): boolean {
 export function keepCopy(storage: StorageLike | null, game: GameState, now: Date = new Date(), current?: GameState): boolean {
   if (!storage || isUntouched(game) || (current && isEarlierStateOf(game, current))) return false;
   try {
-    const copies = readCopyList(storage).flatMap((item) => {
+    const copies: { item: unknown; game: GameState }[] = [];
+    // Copies written by a newer version cannot be read here; keep them untouched for that version.
+    const newer: unknown[] = [];
+    for (const item of readCopyList(storage)) {
       const decoded = decodeSave(JSON.stringify(item));
-      return decoded.ok ? [{ item, game: decoded.save.game }] : [];
-    });
+      if (decoded.ok) copies.push({ item, game: decoded.save.game });
+      else if (decoded.newer) newer.push(item);
+    }
     if (copies.some((c) => isEarlierStateOf(game, c.game))) return true;
-    const others = copies.filter((c) => !isEarlierStateOf(c.game, game) && !(current && isEarlierStateOf(c.game, current)));
     const envelope: SaveEnvelope = { schemaVersion: SAVE_SCHEMA_VERSION, savedAt: now.toISOString(), game };
-    storage.setItem(COPIES_KEY, JSON.stringify([envelope, ...others.map((c) => c.item)].slice(0, MAX_KEPT_COPIES)));
+    const kept = [
+      { item: envelope as unknown, game },
+      ...copies.filter((c) => !isEarlierStateOf(c.game, game) && !(current && isEarlierStateOf(c.game, current))),
+    ];
+    while (kept.length > MAX_KEPT_COPIES) {
+      // Beyond the limit, first let go of a copy that is merely behind the game in play (e.g. an old
+      // snapshot whose history has since been trimmed, so it cannot be recognised exactly), oldest
+      // first; otherwise the oldest copy.
+      let drop = kept.length - 1;
+      if (current) {
+        for (let i = kept.length - 1; i >= 0; i--) {
+          const c = kept[i] as { game: GameState };
+          if (c.game.seed === current.seed && compareProgress(c.game, current) < 0) {
+            drop = i;
+            break;
+          }
+        }
+      }
+      kept.splice(drop, 1);
+    }
+    if (!kept.some((c) => c.game === game)) return false;
+    storage.setItem(COPIES_KEY, JSON.stringify([...kept.map((c) => c.item), ...newer]));
     return true;
   } catch {
     return false;
