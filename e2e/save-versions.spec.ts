@@ -54,21 +54,43 @@ test('a running tab that sees a newer-version save stops instead of overwriting 
   expect(await a.evaluate((key) => localStorage.getItem(key), SAVE_KEY)).toBe(written);
 });
 
-/** Write `game` as an older build would: schema `version`, without the fields later versions added. */
-async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string, version: 2 | 3 | 4 = 2): Promise<void> {
-  const g = structuredClone(game) as unknown as Record<string, unknown> & {
-    dayStart: Record<string, unknown>;
-    stats: Record<string, unknown>;
-    history: (Record<string, unknown> & { expenses: Record<string, unknown> })[];
-  };
+type Loose = Record<string, any>;
+
+/**
+ * Write `game` as an older build would: schema `version`, without the fields later versions added.
+ * Before v6, stock was held per product: ingredient stock is moved onto products keeping its value
+ * (milk and tea as teh ais), and reports carry their spoilage on product lines. Transactions are
+ * kept as they are, so the same play compares equal in both builds.
+ */
+async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string, version: 2 | 3 | 4 | 5 = 2): Promise<void> {
+  const g = structuredClone(game) as unknown as Loose;
   g.schemaVersion = version;
-  // Added in v5 (fixed assets). These tests buy no upgrades, so no depreciation is in the totals.
-  delete g.assets;
-  delete g.dayStart.assetsSen;
-  for (const r of g.history) {
-    delete r.openingAssetsSen;
-    delete r.closingAssetsSen;
-    delete r.expenses.depreciationSen;
+  // Added in v6 (ingredient stock).
+  const ing = g.ingredients as Record<'kopi' | 'susu' | 'teh' | 'pastri', { stock: number; stockValueSen: number }>;
+  delete g.ingredients;
+  for (const id of Object.keys(g.products)) g.products[id] = { ...g.products[id], unitCostSen: 100, stock: 0, stockValueSen: 0 };
+  Object.assign(g.products.kopi_o, { stock: ing.kopi.stock, stockValueSen: ing.kopi.stockValueSen });
+  Object.assign(g.products.teh_ais, { stock: Math.min(ing.susu.stock, ing.teh.stock), stockValueSen: ing.susu.stockValueSen + ing.teh.stockValueSen });
+  Object.assign(g.products.croissant, { stock: ing.pastri.stock, stockValueSen: ing.pastri.stockValueSen });
+  const legacyProduct: Record<string, string> = { kopi: 'kopi_o', susu: 'teh_ais', teh: 'teh_ais', pastri: 'croissant' };
+  for (const r of g.history as Loose[]) {
+    for (const line of r.products as Loose[]) Object.assign(line, { spoiledUnits: 0, spoiledValueSen: 0, closingStock: 0 });
+    for (const l of r.ingredients as Loose[]) {
+      const line = (r.products as Loose[]).find((p) => p.productId === legacyProduct[l.ingredientId]);
+      line!.spoiledUnits += l.spoiled;
+      line!.spoiledValueSen += l.spoiledValueSen;
+    }
+    delete r.ingredients;
+  }
+  if (version <= 4) {
+    // Added in v5 (fixed assets). These tests buy no upgrades, so no depreciation is in the totals.
+    delete g.assets;
+    delete g.dayStart.assetsSen;
+    for (const r of g.history) {
+      delete r.openingAssetsSen;
+      delete r.closingAssetsSen;
+      delete r.expenses.depreciationSen;
+    }
   }
   if (version <= 3) {
     // Added in v4 (sales goals).
@@ -126,7 +148,7 @@ test('an older-build tab that is behind cannot replace newer progress; a divergi
   await expect(a.getByRole('button', { name: 'Pulihkan salinan sandaran: Kopi Kita, Hari 1' })).toBeVisible();
 });
 
-for (const version of [2, 3, 4] as const) {
+for (const version of [2, 3, 4, 5] as const) {
   test(`progress made further ahead in an older-build tab (v${version}) is adopted, not reverted`, async ({ context }) => {
     const a = await context.newPage();
     const old = await context.newPage();
@@ -153,9 +175,11 @@ for (const version of [2, 3, 4] as const) {
     expect(await keptCopies(a)).toEqual([]);
     // Playing on here saves in this build's format, with the fields the old build lacked.
     await restockToForecast(a);
-    const upgraded = (await readSave(a)) as (StoredSave & { game: { goal: unknown; assets: unknown[]; stats: Record<string, number> } }) | null;
+    const upgraded = (await readSave(a)) as (StoredSave & { game: { goal: unknown; assets: unknown[]; ingredients: Loose } }) | null;
     expect(upgraded?.schemaVersion).toBe(SCHEMA_VERSION);
     expect(upgraded?.game).toMatchObject({ day: 2, goal: null, assets: [], dayStart: { assetsSen: 0 }, stats: { goalsMet: 0 } });
+    expect(upgraded?.game.ingredients.kopi.stock).toBeGreaterThan(0);
+    expect((upgraded?.game.history[0] as Loose | undefined)?.ingredients).toBeNull();
   });
 }
 

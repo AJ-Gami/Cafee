@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { setPromotion } from '../engine';
+import { purchaseStockBatch, setProductEnabled, setPromotion } from '../engine';
 import { formatRMCompact } from '../money';
 import { cumulativeByHour, historySeries } from '../reports';
 import { percentPoints, reputationPoints } from '../demand';
@@ -7,6 +7,7 @@ import {
   capacityAfterHire,
   dayEstimate,
   hiringCandidates,
+  ingredientViews,
   objectiveViews,
   prepChecklist,
   previewPrice,
@@ -20,15 +21,40 @@ import { expectOk, newGame, playDays, settle, stockAll, withEvent } from './help
 describe('selectors', () => {
   it('flags out-of-stock products and suggests a restock the player can afford', () => {
     const s = newGame();
-    expect(productViews(s).every((v) => v.stockLevel === 'out')).toBe(true);
+    expect(productViews(s).every((v) => v.stockLevel === 'out' && v.servings === 0)).toBe(true);
+    expect(ingredientViews(s).every((v) => v.stockLevel === 'out')).toBe(true);
     const plan = restockPlan(s);
-    expect(plan.items).toHaveLength(5);
+    expect(plan.items.map((i) => i.ingredientId)).toEqual(['kopi', 'susu', 'teh', 'pastri']);
     expect(plan.totalSen).toBeGreaterThan(0);
     expect(plan.totalSen).toBeLessThan(s.cashSen);
     expect(prepChecklist(s).find((c) => c.id === 'stock')?.status).toBe('bad');
-    const stocked = stockAll(s, 80);
-    expect(restockPlan(stocked).items).toHaveLength(0);
-    expect(prepChecklist(stocked).find((c) => c.id === 'stock')?.status).toBe('ok');
+    // Buying the plan covers today's estimate for every product.
+    const restocked = expectOk(purchaseStockBatch(s, plan.items)).state;
+    expect(productViews(restocked).every((v) => v.stockLevel === 'ok')).toBe(true);
+    expect(restockPlan(restocked).items).toHaveLength(0);
+    expect(prepChecklist(restocked).find((c) => c.id === 'stock')?.status).toBe('ok');
+  });
+
+  it('works out each ingredient’s need from every product that uses it', () => {
+    const s = newGame();
+    const est = dayEstimate(s).perProduct;
+    const milk = ingredientViews(s).find((v) => v.id === 'susu');
+    expect(milk?.estimatedNeed).toBe(est.latte * 2 + est.teh_ais);
+    expect(milk?.usedBy.map((u) => [u.productId, u.qty])).toEqual([
+      ['latte', 2],
+      ['teh_ais', 1],
+    ]);
+    expect(milk?.spoilageRate).toBe(0.05);
+    // Without teh ais on the menu, milk is only needed for lattes; tea is not needed at all.
+    const noTea = expectOk(setProductEnabled(s, 'teh_ais', false)).state;
+    const est2 = dayEstimate(noTea).perProduct;
+    expect(ingredientViews(noTea).find((v) => v.id === 'susu')?.estimatedNeed).toBe(est2.latte * 2);
+    expect(ingredientViews(noTea).find((v) => v.id === 'teh')).toMatchObject({ stockLevel: 'off', suggestedPurchase: 0 });
+    // Milk shared by two products: enough for either alone is not enough for both.
+    const someMilk = expectOk(purchaseStockBatch(stockAll(s, 40), [{ ingredientId: 'teh', quantity: 1 }])).state;
+    const tight = { ...someMilk, ingredients: { ...someMilk.ingredients, susu: { ...someMilk.ingredients.susu, stock: est.latte * 2 } } };
+    expect(productViews(tight).find((v) => v.id === 'latte')?.stockLevel).toBe('low');
+    expect(productViews(tight).find((v) => v.id === 'teh_ais')?.stockLevel).toBe('low');
   });
 
   it('does not leak surprise events into the forecast', () => {

@@ -11,7 +11,7 @@ import { migrateSave } from '../save';
 import { todayGoalView, weekendGoalsTomorrow } from '../selectors';
 import type { DayReport, GameState } from '../types';
 import { validateGameState } from '../validate';
-import { expectOk, newGame, playDays, settle, stockAll } from './helpers';
+import { expectOk, newGame, playDays, settle, stockAll, withProductStock } from './helpers';
 
 const rm = (sen: number): string => `RM${(sen / 100).toFixed(2)}`;
 
@@ -202,7 +202,7 @@ describe('goals in summaries and shares', () => {
 describe('saves with goals', () => {
   /** Remove every field schema v4 added, giving the shape a v3 build wrote. */
   function asV3Save(game: GameState): unknown {
-    const g = structuredClone(game) as unknown as Record<string, unknown> & {
+    const g = withProductStock(game) as Record<string, unknown> & {
       stats: Record<string, unknown>;
       history: Record<string, unknown>[];
     };

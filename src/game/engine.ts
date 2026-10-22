@@ -9,12 +9,13 @@ import {
   HISTORY_LIMIT,
   MAX_PRICE_SEN,
   MAX_PURCHASE_QTY,
-  MAX_STOCK_PER_PRODUCT,
+  MAX_STOCK_PER_INGREDIENT,
   MIN_PRICE_SEN,
   SAVE_SCHEMA_VERSION,
   STARTING_CASH_SEN,
   STARTING_REPUTATION,
 } from './constants';
+import { INGREDIENTS } from './data/ingredients';
 import { PRODUCTS } from './data/products';
 import { PROMOTIONS } from './data/promotions';
 import { STAFF_ROLES, STARTING_STAFF } from './data/staff';
@@ -27,6 +28,7 @@ import {
   dailyUtilities,
   inventoryValue,
   quotePurchase,
+  spoilageRate,
   takeFromStock,
 } from './economy';
 import { depreciateAtClose, newAsset, totalBookValue } from './assets';
@@ -45,6 +47,9 @@ import type {
   EngineResult,
   ExpenseBreakdown,
   GameState,
+  IngredientDayLine,
+  IngredientId,
+  IngredientState,
   ProductDayLine,
   ProductId,
   ProductState,
@@ -55,7 +60,7 @@ import type {
   LoanOfferId,
   UpgradeId,
 } from './types';
-import { PRODUCT_IDS } from './types';
+import { INGREDIENT_IDS, PRODUCT_IDS } from './types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,6 +83,10 @@ function guardPrep(state: GameState): EngineResult | null {
   return null;
 }
 
+function isIngredientId(value: unknown): value is IngredientId {
+  return typeof value === 'string' && value in INGREDIENTS;
+}
+
 function isProductId(value: unknown): value is ProductId {
   return typeof value === 'string' && (PRODUCT_IDS as readonly string[]).includes(value);
 }
@@ -96,7 +105,7 @@ function makeTx(
   type: TransactionType,
   amountSen: number,
   label: string,
-  extra: Pick<Transaction, 'productId' | 'quantity'> = {},
+  extra: Pick<Transaction, 'productId' | 'ingredientId' | 'quantity'> = {},
 ): Transaction {
   return { id: `tx-${state.day}-${seq}`, day: state.day, type, amountSen, label, ...extra };
 }
@@ -106,7 +115,7 @@ function withTransaction(
   type: TransactionType,
   amountSen: number,
   label: string,
-  extra: Pick<Transaction, 'productId' | 'quantity'> = {},
+  extra: Pick<Transaction, 'productId' | 'ingredientId' | 'quantity'> = {},
 ): GameState {
   const tx = makeTx(state, state.txSeq, type, amountSen, label, extra);
   return {
@@ -130,19 +139,14 @@ function insufficient(neededSen: number, cashSen: number): EngineResult {
 
 export function createInitialProducts(): Record<ProductId, ProductState> {
   return Object.fromEntries(
-    PRODUCT_IDS.map((id) => {
-      const def = PRODUCTS[id];
-      const product: ProductState = {
-        id,
-        priceSen: def.defaultPriceSen,
-        unitCostSen: def.baseCostSen,
-        stock: 0,
-        stockValueSen: 0,
-        enabled: true,
-      };
-      return [id, product];
-    }),
+    PRODUCT_IDS.map((id) => [id, { id, priceSen: PRODUCTS[id].defaultPriceSen, enabled: true } satisfies ProductState]),
   ) as Record<ProductId, ProductState>;
+}
+
+export function createInitialIngredients(): Record<IngredientId, IngredientState> {
+  return Object.fromEntries(
+    INGREDIENT_IDS.map((id) => [id, { id, unitCostSen: INGREDIENTS[id].baseCostSen, stock: 0, stockValueSen: 0 } satisfies IngredientState]),
+  ) as Record<IngredientId, IngredientState>;
 }
 
 function menuPrices(products: Record<ProductId, ProductState>): Record<ProductId, number> {
@@ -151,6 +155,7 @@ function menuPrices(products: Record<ProductId, ProductState>): Record<ProductId
 
 export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME): GameState {
   const products = createInitialProducts();
+  const ingredients = createInitialIngredients();
   return {
     schemaVersion: SAVE_SCHEMA_VERSION,
     seed: seed >>> 0,
@@ -161,13 +166,14 @@ export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME
     cashSen: STARTING_CASH_SEN,
     reputation: STARTING_REPUTATION,
     products,
+    ingredients,
     staff: [{ ...STARTING_STAFF }],
     upgrades: [],
     promotion: 'none',
     todayEventId: rollEventForDay(seed >>> 0, 1),
     dayStart: {
       cashSen: STARTING_CASH_SEN,
-      inventorySen: inventoryValue(products),
+      inventorySen: inventoryValue(ingredients),
       debtSen: 0,
       assetsSen: 0,
       staffNames: [STARTING_STAFF.name],
@@ -211,14 +217,14 @@ export function sanitizeCafeName(name: string): string | null {
 // Preparation actions
 // ---------------------------------------------------------------------------
 
-export function purchaseStock(state: GameState, productId: ProductId, quantity: number): EngineResult {
-  return purchaseStockBatch(state, [{ productId, quantity }]);
+export function purchaseStock(state: GameState, ingredientId: IngredientId, quantity: number): EngineResult {
+  return purchaseStockBatch(state, [{ ingredientId, quantity }]);
 }
 
-/** Buy several products atomically: either every line succeeds or nothing changes. */
+/** Buy several ingredients atomically: either every line succeeds or nothing changes. */
 export function purchaseStockBatch(
   state: GameState,
-  items: readonly { productId: ProductId; quantity: number }[],
+  items: readonly { ingredientId: IngredientId; quantity: number }[],
 ): EngineResult {
   const blocked = guardPrep(state);
   if (blocked) return blocked;
@@ -226,43 +232,43 @@ export function purchaseStockBatch(
   if (lines.length === 0) return fail('INVALID_QUANTITY', 'Tiada kuantiti untuk dibeli.');
 
   for (const item of lines) {
-    if (!isProductId(item.productId)) return fail('UNKNOWN_ITEM', 'Produk tidak dikenali.');
+    if (!isIngredientId(item.ingredientId)) return fail('UNKNOWN_ITEM', 'Bahan tidak dikenali.');
     if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > MAX_PURCHASE_QTY) {
       return fail('INVALID_QUANTITY', `Kuantiti mesti antara 1 dan ${MAX_PURCHASE_QTY}.`);
     }
-    const product = state.products[item.productId];
-    if (product.stock + item.quantity > MAX_STOCK_PER_PRODUCT) {
-      return fail(
-        'STORAGE_FULL',
-        `Stor penuh. ${PRODUCTS[item.productId].name} boleh disimpan maksimum ${MAX_STOCK_PER_PRODUCT} unit.`,
-      );
+  }
+  // Checked per ingredient over the whole batch, so repeating a line cannot overfill the store.
+  for (const id of INGREDIENT_IDS) {
+    const adding = sumSen(lines.filter((i) => i.ingredientId === id).map((i) => i.quantity));
+    if (adding > 0 && state.ingredients[id].stock + adding > MAX_STOCK_PER_INGREDIENT) {
+      return fail('STORAGE_FULL', `Stor penuh. ${INGREDIENTS[id].name} boleh disimpan maksimum ${MAX_STOCK_PER_INGREDIENT} ${INGREDIENTS[id].unitLabel}.`);
     }
   }
 
-  const quotes = lines.map((i) => quotePurchase(state, i.productId, i.quantity));
+  const quotes = lines.map((i) => quotePurchase(state, i.ingredientId, i.quantity));
   const total = sumSen(quotes.map((q) => q.totalSen));
   if (total > state.cashSen) return insufficient(total, state.cashSen);
 
   let next = state;
   for (const quote of quotes) {
-    const def = PRODUCTS[quote.productId];
+    const def = INGREDIENTS[quote.ingredientId];
     next = {
       ...next,
-      products: {
-        ...next.products,
-        [quote.productId]: addToStock(next.products[quote.productId], quote.quantity, quote.totalSen),
+      ingredients: {
+        ...next.ingredients,
+        [quote.ingredientId]: addToStock(next.ingredients[quote.ingredientId], quote.quantity, quote.totalSen),
       },
     };
-    next = withTransaction(next, 'stock_purchase', -quote.totalSen, `Beli stok ${def.name} ×${quote.quantity}`, {
-      productId: quote.productId,
+    next = withTransaction(next, 'stock_purchase', -quote.totalSen, `Beli ${def.name} ×${quote.quantity}`, {
+      ingredientId: quote.ingredientId,
       quantity: quote.quantity,
     });
   }
 
-  const message =
-    quotes.length === 1 && quotes[0]
-      ? `Berjaya membeli ${quotes[0].quantity} ${PRODUCTS[quotes[0].productId].unitLabel} ${PRODUCTS[quotes[0].productId].name} (${formatRM(total)}).`
-      : `Berjaya membeli stok untuk ${quotes.length} produk (${formatRM(total)}).`;
+  const only = quotes.length === 1 ? quotes[0] : undefined;
+  const message = only
+    ? `Berjaya membeli ${only.quantity} ${INGREDIENTS[only.ingredientId].unitLabel} ${INGREDIENTS[only.ingredientId].name} (${formatRM(total)}).`
+    : `Berjaya membeli stok untuk ${quotes.length} bahan (${formatRM(total)}).`;
   return succeed(next, message);
 }
 
@@ -360,18 +366,18 @@ export function buyUpgrade(state: GameState, upgradeId: UpgradeId): EngineResult
   if (currentLevel(state) < def.minLevel) return fail('LOCKED', `Naik taraf ini dibuka pada Tahap ${def.minLevel}.`);
   if (def.costSen > state.cashSen) return insufficient(def.costSen, state.cashSen);
 
-  let products = state.products;
+  let ingredients = state.ingredients;
   const discount = def.effects.supplierDiscountBps ?? 0;
   if (discount > 0) {
-    products = { ...products };
-    for (const id of PRODUCT_IDS) {
-      const p = products[id];
-      products[id] = { ...p, unitCostSen: p.unitCostSen - applyBps(p.unitCostSen, discount) };
+    ingredients = { ...ingredients };
+    for (const id of INGREDIENT_IDS) {
+      const item = ingredients[id];
+      ingredients[id] = { ...item, unitCostSen: item.unitCostSen - applyBps(item.unitCostSen, discount) };
     }
   }
   let next: GameState = {
     ...state,
-    products,
+    ingredients,
     upgrades: [...state.upgrades, upgradeId],
     assets: [...state.assets, newAsset(upgradeId, state.day)],
   };
@@ -432,12 +438,6 @@ export function renameCafe(state: GameState, name: string): EngineResult {
 // Daily settlement
 // ---------------------------------------------------------------------------
 
-function spoilageRate(productId: ProductId, upgrades: readonly UpgradeId[]): number {
-  let rate = PRODUCTS[productId].spoilageRate;
-  for (const id of upgrades) rate *= UPGRADES[id].effects.spoilageMultiplier?.[productId] ?? 1;
-  return rate;
-}
-
 function describeEvent(
   event: ResolvedEvent,
   customers: CustomerSummary,
@@ -491,6 +491,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
       day,
       reputation: state.reputation,
       products: state.products,
+      ingredients: state.ingredients,
       baseHourlyCapacity,
       mods,
       ...(extra ? { extraOrders: { hour: event.def.hour, items: extra } } : {}),
@@ -499,12 +500,12 @@ export function openCafe(state: GameState, day: number): EngineResult {
   );
 
   // --- Closing-time spoilage (non-cash write-off of perishable stock) ---
-  const products = { ...sim.products };
-  const spoiled = {} as Record<ProductId, { units: number; valueSen: number }>;
-  for (const id of PRODUCT_IDS) {
-    const units = Math.floor(products[id].stock * spoilageRate(id, state.upgrades));
-    const taken = takeFromStock(products[id], units);
-    products[id] = taken.product;
+  const ingredients = { ...sim.ingredients };
+  const spoiled = {} as Record<IngredientId, { units: number; valueSen: number }>;
+  for (const id of INGREDIENT_IDS) {
+    const units = Math.floor(ingredients[id].stock * spoilageRate(id, state.upgrades));
+    const taken = takeFromStock(ingredients[id], units);
+    ingredients[id] = taken.item;
     spoiled[id] = { units, valueSen: taken.costSen };
   }
 
@@ -556,7 +557,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
   const depreciation = depreciateAtClose(state.assets);
   const revenueSen = sumSen(PRODUCT_IDS.map((id) => sim.lines[id].revenueSen));
   const cogsSen = sumSen(PRODUCT_IDS.map((id) => sim.lines[id].cogsSen));
-  const spoilageSen = sumSen(PRODUCT_IDS.map((id) => spoiled[id].valueSen));
+  const spoilageSen = sumSen(INGREDIENT_IDS.map((id) => spoiled[id].valueSen));
   const otherIncomeSen = totalOf('event_income');
   const expenses: ExpenseBreakdown = {
     wagesSen: paidFor('wages'),
@@ -629,10 +630,23 @@ export function openCafe(state: GameState, day: number): EngineResult {
     unmetStockout: sim.lines[id].unmetStockout,
     revenueSen: sim.lines[id].revenueSen,
     cogsSen: sim.lines[id].cogsSen,
-    spoiledUnits: spoiled[id].units,
-    spoiledValueSen: spoiled[id].valueSen,
-    closingStock: products[id].stock,
     salePriceSen: sim.lines[id].salePriceSen,
+  }));
+  // A purchase made before a save was upgraded to ingredient stock names a product: count its recipe.
+  const purchasedToday = (id: IngredientId): number =>
+    prepTx.reduce((n, t) => {
+      if (t.type !== 'stock_purchase') return n;
+      const perUnit = t.ingredientId ? (t.ingredientId === id ? 1 : 0) : t.productId ? (PRODUCTS[t.productId].recipe[id] ?? 0) : 0;
+      return n + perUnit * (t.quantity ?? 0);
+    }, 0);
+  const ingredientLines: IngredientDayLine[] = INGREDIENT_IDS.map((id) => ({
+    ingredientId: id,
+    purchased: purchasedToday(id),
+    used: sim.used[id].units,
+    spoiled: spoiled[id].units,
+    closingStock: ingredients[id].stock,
+    usedValueSen: sim.used[id].valueSen,
+    spoiledValueSen: spoiled[id].valueSen,
   }));
 
   const report: DayReport = {
@@ -660,7 +674,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     openingAssetsSen: state.dayStart.assetsSen,
     closingAssetsSen: totalBookValue(depreciation.assets),
     openingInventorySen: state.dayStart.inventorySen,
-    closingInventorySen: inventoryValue(products),
+    closingInventorySen: inventoryValue(ingredients),
     reputationBefore: state.reputation,
     reputationAfter: rep.after,
     customers: sim.customers,
@@ -670,6 +684,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     transactions: allTx,
     objectivesCompleted: [],
     goal: state.goal ? goalResult(state.goal, revenueSen) : null,
+    ingredients: ingredientLines,
   };
 
   // --- Stats & status ---
@@ -699,7 +714,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     status: negativeCashStreak >= BANKRUPTCY_NEGATIVE_DAYS ? 'bankrupt' : 'active',
     cashSen: closingCashSen,
     reputation: rep.after,
-    products,
+    ingredients,
     txSeq: seq,
     dayTransactions: [],
     lastSettledDay: day,
@@ -743,7 +758,7 @@ export function startNextDay(state: GameState, day: number): EngineResult {
     goal: dayGoalFor(nextDay, todayEventId, state.history),
     dayStart: {
       cashSen: state.cashSen,
-      inventorySen: inventoryValue(state.products),
+      inventorySen: inventoryValue(state.ingredients),
       debtSen: remainingPrincipal(state.loan),
       assetsSen: totalBookValue(state.assets),
       staffNames: state.staff.map((s) => s.name),

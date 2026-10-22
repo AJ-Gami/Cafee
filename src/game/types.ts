@@ -9,6 +9,11 @@ export type ProductId = 'kopi_o' | 'americano' | 'latte' | 'teh_ais' | 'croissan
 
 export const PRODUCT_IDS: readonly ProductId[] = ['kopi_o', 'americano', 'latte', 'teh_ais', 'croissant'];
 
+/** What the café stocks: each menu item is made from these by its recipe. */
+export type IngredientId = 'kopi' | 'susu' | 'teh' | 'pastri';
+
+export const INGREDIENT_IDS: readonly IngredientId[] = ['kopi', 'susu', 'teh', 'pastri'];
+
 export type StaffRole = 'barista' | 'cashier';
 
 export type UpgradeId =
@@ -71,14 +76,18 @@ export interface ProductState {
   id: ProductId;
   /** Menu selling price per unit. */
   priceSen: number;
+  /** Whether the product is offered on today's menu. */
+  enabled: boolean;
+}
+
+export interface IngredientState {
+  id: IngredientId;
   /** Current supplier cost per unit (before event modifiers or bulk discounts). */
   unitCostSen: number;
   /** Units on hand. Never negative. */
   stock: number;
   /** Carrying value of the units on hand (weighted-average cost). 0 when stock is 0. */
   stockValueSen: number;
-  /** Whether the product is offered on today's menu. */
-  enabled: boolean;
 }
 
 export interface StaffMember {
@@ -120,7 +129,10 @@ export interface Transaction {
   type: TransactionType;
   amountSen: number;
   label: string;
+  /** Sales: the product sold. */
   productId?: ProductId;
+  /** Stock purchases: the ingredient bought (older saves name a product instead). */
+  ingredientId?: IngredientId;
   quantity?: number;
 }
 
@@ -132,12 +144,29 @@ export interface ProductDayLine {
   /** Units customers wanted but could not get because the item was out of stock. */
   unmetStockout: number;
   revenueSen: number;
+  /** Cost of the ingredients used for the units sold. */
   cogsSen: number;
-  spoiledUnits: number;
-  spoiledValueSen: number;
-  closingStock: number;
   /** Effective sale price per unit today (after promotion discount). */
   salePriceSen: number;
+  /**
+   * Reports from before ingredient stock (schema v5 and older) kept stock per product, so their
+   * spoilage and closing stock are recorded on the product line instead.
+   */
+  spoiledUnits?: number;
+  spoiledValueSen?: number;
+  closingStock?: number;
+}
+
+export interface IngredientDayLine {
+  ingredientId: IngredientId;
+  purchased: number;
+  /** Units used by the products sold. */
+  used: number;
+  spoiled: number;
+  closingStock: number;
+  /** Carrying value of the units used (part of COGS) and spoiled (a write-off). */
+  usedValueSen: number;
+  spoiledValueSen: number;
 }
 
 export interface HourlyLine {
@@ -251,6 +280,8 @@ export interface DayReport {
   objectivesCompleted: ObjectiveId[];
   /** The day's sales goal and whether it was met (null on days without one). */
   goal: DayGoalResult | null;
+  /** Stock movements per ingredient (null on reports from before ingredient stock). */
+  ingredients: IngredientDayLine[] | null;
 }
 
 export interface GameStats {
@@ -310,6 +341,7 @@ export interface GameState {
   /** 0..100, one decimal place. */
   reputation: number;
   products: Record<ProductId, ProductState>;
+  ingredients: Record<IngredientId, IngredientState>;
   staff: StaffMember[];
   upgrades: UpgradeId[];
   promotion: PromotionId;

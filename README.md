@@ -28,9 +28,9 @@ The build uses a relative base (`./`), so you can host `dist/` from any static h
 
 ## How to play
 
-1. **Prepare (Persediaan).** Buy stock under *Menu → Inventori*, set prices under *Menu → Menu & harga*, hire staff or buy upgrades under *Urus*, and choose a promotion under *Operasi*.
+1. **Prepare (Persediaan).** Buy ingredients under *Menu → Inventori* (each menu item is made from them by its recipe), set prices under *Menu → Menu & harga*, hire staff or buy upgrades under *Urus*, and choose a promotion under *Operasi*.
 2. **Open the café (Buka kafe).** The day is simulated hour by hour from 08:00 to 20:00. Footfall depends on reputation, weekday, promotion, upgrades and events. Each customer picks an item, decides whether the price is acceptable, and may be turned away by stock-outs, queues (service capacity) or closures.
-3. **Close.** Wages, rent and utilities are paid. Unsold croissants (≈40%) and latte milk (≈5%) spoil overnight.
+3. **Close.** Wages, rent and utilities are paid. Leftover croissant dough (≈40%) and milk (≈5%) spoil overnight; coffee and tea keep.
 4. **Review the report.** It includes P&L, cash flow, customer breakdown, product performance, event outcome, timeline, transactions, reconciliation checks and a shareable result card. Then start the next day.
 
 Short of cash? *Kewangan → Pinjaman* offers bank loans (fictional terms). The money arrives at once; from the next day one installment of principal plus flat interest is charged at every close, even if cash runs short. A loan can be cancelled free on the day it is taken, or paid off early later for the remaining principal plus one day's interest.
@@ -48,13 +48,20 @@ Objectives award XP. XP raises the café level (Kafe Kecil → Kafe Kejiranan �
 | Staff | 1 barista (Aiman, RM90/day, 8 orders/hour) |
 | Stock | none (buying it is your first decision) |
 
-| Product | Unit cost | Price | Notes |
-|---|---|---|---|
-| Kopi O | RM1.00 | RM3.50 | |
-| Americano | RM1.50 | RM5.00 | |
-| Latte | RM2.20 | RM7.00 | 5% overnight spoilage (milk) |
-| Teh Ais | RM1.20 | RM3.50 | |
-| Croissant | RM2.00 | RM5.50 | Add-on to drinks; 40% overnight spoilage |
+| Ingredient | Unit cost | Notes |
+|---|---|---|
+| Biji kopi (coffee beans) | RM0.80 per measure | |
+| Susu segar (milk) | RM0.70 per measure | 5% of what is left spoils overnight |
+| Serbuk teh (tea) | RM0.50 per measure | |
+| Doh croissant (pastry) | RM2.00 per piece | 40% of what is left spoils overnight |
+
+| Product | Recipe | Ingredient cost | Price | Notes |
+|---|---|---|---|---|
+| Kopi O | 1 coffee | RM0.80 | RM3.50 | |
+| Americano | 2 coffee | RM1.60 | RM5.00 | |
+| Latte | 1 coffee + 2 milk | RM2.20 | RM7.00 | |
+| Teh Ais | 1 tea + 1 milk | RM1.20 | RM3.50 | |
+| Croissant | 1 pastry | RM2.00 | RM5.50 | Add-on to drinks |
 
 Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ upgrade extras), and wages.
 
@@ -63,7 +70,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 ## Features
 
 - **Pricing and menu:** per-product price editor with a live margin and price-perception preview, plus menu on/off toggles.
-- **Inventory:** purchases with quick quantities, bulk discounts (50+ units 5%, 100+ units 8%), a one-tap restock to the forecast, low/out-of-stock warnings and insufficient-funds states.
+- **Inventory by ingredient:** coffee beans, milk, tea and croissant dough, each held at weighted-average cost. Products are made from them by recipe, so products sharing an ingredient (latte and teh ais both use milk) compete for it, and a product runs out when any of its ingredients does. Purchases with quick quantities, bulk discounts (50+ units 5%, 100+ units 8%), a one-tap restock to the forecast (each ingredient's need summed over the menu), how many of each product the stock can make, low/out-of-stock warnings and insufficient-funds states. Reports show each ingredient's purchases, use, spoilage and closing stock.
 - **Demand model:** reputation, weekday, price elasticity, promotions, upgrades, events, substitution on stock-outs and price objections, and drink→croissant add-ons.
 - **Service capacity:** hourly order capacity from staff (baristas and cashiers) and upgrades. Customers beyond capacity leave.
 - **Staff:** three deterministic candidates each day, a hiring fee, daily wages, firing with confirmation, and staff slots (2, or 4 with an upgrade). The team's names are recorded at the start of each day, so hiring or firing never renames or duplicates the day's candidates.
@@ -73,7 +80,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Bank loans (3):** RM2,000 / RM5,000 / RM12,000 over 10 / 20 / 30 days at 5% / 8% / 12% flat interest, gated by café level, one at a time. Installments are exact to the sen (the last one absorbs rounding). Early settlement, a dashboard debt hint and the day's installment in the fixed-cost forecast.
 - **Weekend and public-holiday goals:** a revenue target for every Saturday, Sunday and public holiday, set from the recent average when the day starts (see *How to play*), shown before opening, during the replay and in the report, the result card and the week's summary.
 - **Objectives (19) and levels (4).** Savings objectives count cash net of loan principal, so borrowed money never completes them.
-- **Reports:** a reconciled P&L, cash flow, an inventory bridge, a debt bridge, a fixed-asset bridge, 13 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
+- **Reports:** a reconciled P&L, cash flow, an inventory bridge, a debt bridge, a fixed-asset bridge, 14 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
 - **Weekly summaries:** every 7th day's report (Sunday) opens with a summary of the week (revenue, net profit, customers, profitable days, best day, service rate, cash and reputation movement, sales goals met) compared with the previous week, with its own shareable PNG card and copyable text. *Kewangan → Laporan → Mingguan* lists every week, marking the week still being played and any week cut short by the history limit; comparisons are only made between two complete weeks.
 - **Finance:** revenue vs net-profit chart, cash chart, table view, expense breakdown, daily and weekly report history, a transaction ledger and loans.
 - **Persistence:** a versioned save with autosave after every action, validation, migration, corrupt-save backup and recovery (a backup this build can load can be restored from Settings), and confirmed reset (also when restarting after bankruptcy).
@@ -97,7 +104,7 @@ src/
     dashboard/             KPIs, today, alerts, 7-day profit, next objectives
     operations/            prep checklist, today's goal, promotion picker, open café, live day playback
     menu/                  prices & menu toggles
-    inventory/             stock purchasing and restock plan
+    inventory/             ingredient purchasing, servings per product and restock plan
     business/              staff, upgrades, objectives
     finance/               summary charts (lazy-loaded Recharts), reports list, ledger, loans
     reports/               end-of-day report, result card, week summary, share images and buttons
@@ -108,7 +115,7 @@ src/
     data/                  static products, promotions, upgrades, staff, events, objectives, loans
     money.ts               integer-sen helpers and formatting
     rng.ts                 seeded PRNG, per (seed, day, purpose) streams
-    economy.ts             weighted-average inventory, purchase quotes, expenses
+    economy.ts             weighted-average inventory, recipes, purchase quotes, expenses
     demand.ts              footfall, price response, capacity, day simulation, reputation
     events.ts              event roll and mitigation
     staff.ts               capacity, slots, daily candidates
@@ -130,7 +137,7 @@ src/
 - **The UI never calculates financial results.** Components render values from `engine.ts`, `selectors.ts`, `economy.quotePurchase` and `reports.ts`.
 - **Each day is processed exactly once.** `openCafe(state, day)` is rejected unless `day === state.day`, the phase is `prep`, and `lastSettledDay < day`. The reducer is pure, so React StrictMode double-invocation is harmless. Repeated taps are ignored silently, and the button also disables itself.
 - **Determinism.** Events, demand and candidates come from `hash(seed, day, purpose)`. Reloading cannot re-roll a day, and tests use fixed seeds.
-- **Accounting.** Stock purchases reduce cash immediately and increase inventory value. COGS is recognised only when units sell, using weighted-average cost. When the last unit leaves, the remaining value is released, so no rounding residue is left. Spoilage is a non-cash write-off shown under *Lain-lain*. Upgrades are capital spending: they reduce cash when bought and become fixed assets at cost, depreciated straight-line over 90 closes (an equal non-cash charge at each close from the day of purchase, the last absorbing the rounding), shown as *Susut nilai*. Loans are financing: the money received and principal repaid move cash and debt but not profit; only interest is an expense (under *Lain-lain*).
+- **Accounting.** Ingredient purchases reduce cash immediately and increase inventory value. COGS is recognised only when products sell: the weighted-average cost of the ingredients their recipes use. When the last unit leaves, the remaining value is released, so no rounding residue is left. Spoilage is a non-cash write-off shown under *Lain-lain*. Upgrades are capital spending: they reduce cash when bought and become fixed assets at cost, depreciated straight-line over 90 closes (an equal non-cash charge at each close from the day of purchase, the last absorbing the rounding), shown as *Susut nilai*. Loans are financing: the money received and principal repaid move cash and debt but not profit; only interest is an expense (under *Lain-lain*).
 
 ### Report reconciliation
 
@@ -142,6 +149,7 @@ src/
 - expense lines add up, and cash expenses match their transactions
 - net profit = revenue + other income − COGS − expenses
 - opening inventory + purchases − COGS − spoilage = closing inventory
+- Σ ingredient value used = COGS (reports with ingredient lines)
 - loan transactions = loan received − principal repaid
 - opening debt + loan received − principal repaid = closing debt
 - opening fixed assets + capex − depreciation = closing fixed assets
@@ -149,8 +157,8 @@ src/
 
 ### Save format
 
-- Key: `rlt-cafe-empire/save`. Envelope: `{ schemaVersion: 5, savedAt, saveId, game }`.
-- **Migration:** `migrateSave()` upgrades known older formats step by step (v1 → v2 → v3 → v4 → v5). The v1 prototype format (money in ringgit decimals, no ledger) becomes v2; v2 saves gain the loan fields (no loan, zero debt, zero interest in past reports) to become v3; v3 saves gain the sales-goal fields (no goal on past days, none met; a save made while preparing a weekend or public holiday gets that day's goal) to become v4; in v4 saves each upgrade becomes a fixed asset at full cost with no depreciation taken yet (upgrades were never expensed before), depreciated from the next close, and past reports gain zero depreciation, to become v5. Every step is covered by unit and e2e tests. Newer-than-supported versions are rejected, and a tab of the previous build shows a reload screen instead of touching a newer save.
+- Key: `rlt-cafe-empire/save`. Envelope: `{ schemaVersion: 6, savedAt, saveId, game }`.
+- **Migration:** `migrateSave()` upgrades known older formats step by step (v1 → v2 → v3 → v4 → v5 → v6). The v1 prototype format (money in ringgit decimals, no ledger) becomes v2; v2 saves gain the loan fields (no loan, zero debt, zero interest in past reports) to become v3; v3 saves gain the sales-goal fields (no goal on past days, none met; a save made while preparing a weekend or public holiday gets that day's goal) to become v4; in v4 saves each upgrade becomes a fixed asset at full cost with no depreciation taken yet (upgrades were never expensed before), depreciated from the next close, and past reports gain zero depreciation, to become v5; in v5 saves each product's stock becomes the ingredients its recipe uses, carrying the same total value (split by the ingredients' list prices), supplier prices restart from the ingredient list (less the supplier contract, if owned), and past reports keep their per-product spoilage and closing stock, to become v6. Every step is covered by unit and e2e tests. Newer-than-supported versions are rejected, and a tab of the previous build shows a reload screen instead of touching a newer save.
 - **Validation:** `validateGameState()` checks types, integer money, ranges, known IDs, phase consistency and report structure.
 - **Write ids:** each write stores a random `saveId` before the game data, so `peekSaveId()` can detect another tab's write without parsing the whole save.
 - **Recovery:** if the save is malformed or invalid, the raw text is copied to `rlt-cafe-empire/save-rosak`, a new game starts and the player sees a notice.
@@ -166,13 +174,14 @@ src/
 npm test
 ```
 
-There are 181 tests in 11 suites (`src/game/__tests__`):
+There are 191 tests in 12 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
 | `money.test.ts` | formatting, input parsing, integer rounding |
-| `economy.test.ts` | purchase quotes, bulk discounts, event surcharges, WAC costing, no negative inventory |
-| `engine.test.ts` | starting state, purchases and insufficient funds, atomic batch buys, storage limits, price bounds, disabled products, revenue/COGS/net profit, cash balance, unsold stock is not COGS, spoilage, multi-seed 25-day reconciliation, capacity limits, price elasticity, one settlement per day, phase locking, promotions (including free promotions while cash is negative), staff (candidate list unchanged by hires and fires, unique names), upgrades, bankruptcy |
+| `economy.test.ts` | purchase quotes, bulk discounts, event surcharges, recipe costs, servings and the missing ingredient, WAC costing, no negative inventory |
+| `ingredients.test.ts` | v5→v6 migration (product units become recipe units with the value kept, supplier prices with the contract discount, old reports kept and reconciled, a pre-upgrade purchase counted that day), ingredient report validation, perishable rates and the pastry display |
+| `engine.test.ts` | starting state, ingredient purchases and insufficient funds, atomic batch buys, storage limits (also over a batch), price bounds, disabled products, revenue/COGS/net profit, cash balance, unsold stock is not COGS, products sharing milk, spoilage of perishable ingredients only, multi-seed 25-day reconciliation, capacity limits, price elasticity, one settlement per day, phase locking, promotions (including free promotions while cash is negative), staff (candidate list unchanged by hires and fires, unique names), upgrades, bankruptcy |
 | `events.test.ts` | reproducible rolls, hidden surprises, surprise effects starting at the event hour, effects of rain/festival/heatwave/power outage/breakdown/inspection (+mitigation)/contest/office order/reviewer/price spike |
 | `save.test.ts` | save/load round trips, export/import (round trip, file naming, invalid and oversized files, v1 import), save ids and other-tab write detection, malformed JSON, invalid values, newer-version saves left untouched, kept copies (order, de-duplication, limit, the old backup key, removal, full storage, dropped before the current save fails), comparing two copies of a game (progress order, earlier point vs diverging branch, field order written by another build, mid-preparation snapshots, changes without a transaction measured from the shared point or the day's recorded starting name and prices, which game stays), throwing/unavailable storage, v1 migration, reset |
 | `loans.test.ts` | exact installment schedules, taking a loan (financing, level lock, one at a time, phase lock), installments at each close until repaid, charges when cash is short, fixed-cost forecast, free same-day cancellation, early settlement, borrowed cash excluded from savings objectives, v2→v3 migration, loan validation |
@@ -193,10 +202,11 @@ npm run test:e2e
 | Spec | Covers |
 |---|---|
 | `core-loop.spec.ts` | starting state; buy stock → edit price → open → reconciled report → refresh keeps progress → next day; double-tap settles once; no-stock confirmation; leaving the replay |
-| `screens.spec.ts` | no horizontal overflow and no touch target under 40px on every screen at 360/390/768px; menu, inventory (low stock, insufficient funds), staff hiring, finance charts/table/report sheet/ledger, share-card download |
+| `ingredients.spec.ts` | ingredient cards and what each product can make from them, following its recipe as ingredients are bought; the report's ingredient movements |
+| `screens.spec.ts` | no horizontal overflow and no touch target under 40px on every screen at 360/390/768px; menu (recipe and ingredient cost), inventory (low stock, insufficient funds), staff hiring, finance charts/table/report sheet/ledger, share-card download |
 | `persistence.spec.ts` | corrupt-save backup and recovery, v1 migration, confirmed reset, bankruptcy and confirmed restart |
 | `offline.spec.ts` | after the first visit, with the network cut for both the page and the service worker, the game reloads and keeps playing (charts included); other pages on the origin are not answered with the game; manifest and icons are served |
-| `save-versions.spec.ts` | a newer-version save is left untouched (reload screen at start-up and in a running tab, with focus on it); an older-build tab that is behind cannot replace newer progress and a diverging copy is kept aside; progress further ahead in an older-build tab (v2, v3 or v4) is adopted, and playing on saves it in the current format; a loadable backup copy is restored from Settings and focus stays in the sheet; a bankrupt café set aside is not announced as progress; a kept copy (24-letter name, no overflow) can be removed, its start-up notice goes with it and Tab/Shift+Tab stay in the sheet; a sheet keeps scrolling with the keyboard after its text is clicked; menu changes in an older-build tab do not pile up copies |
+| `save-versions.spec.ts` | a newer-version save is left untouched (reload screen at start-up and in a running tab, with focus on it); an older-build tab that is behind cannot replace newer progress and a diverging copy is kept aside; progress further ahead in an older-build tab (v2 to v5) is adopted, and playing on saves it in the current format; a loadable backup copy is restored from Settings and focus stays in the sheet; a bankrupt café set aside is not announced as progress; a kept copy (24-letter name, no overflow) can be removed, its start-up notice goes with it and Tab/Shift+Tab stay in the sheet; a sheet keeps scrolling with the keyboard after its text is clicked; menu changes in an older-build tab do not pile up copies |
 | `keyboard.spec.ts` | Tab stays inside a sheet after clicking its text; a sheet with no controls scrolls with the keyboard and shows the app's focus outline; every section of a past report opens with the keyboard; focus moves to the main content, without scrolling, when a confirmation disables the button that opened it |
 | `backup.spec.ts` | export downloads the save; import restores it after a reset; an invalid file is rejected without changes; restoring and going bankrupt again on the same day shows the game-over dialog; keyboard focus stays inside the settings sheet |
 | `loans.spec.ts` | take a loan, installments in reconciled reports, early settlement and its objective; a v2 save migrates on load |
@@ -212,7 +222,8 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 
 ## Decisions on ambiguous requirements
 
-- **"Configurable unit cost":** unit cost lives in the product state and in `data/products.ts`. Players change it indirectly through the supplier-contract upgrade (−10%), bulk discounts and events (+25% coffee price spike). Prices are set directly.
+- **"Configurable unit cost":** unit costs live in the ingredient state and in `data/ingredients.ts`; a product's cost is its recipe (`data/products.ts`) at today's ingredient prices. Players change them indirectly through the supplier-contract upgrade (−10%), bulk discounts and events (+25% on coffee beans during a price spike). Prices are set directly.
+- **Ingredient units:** one unit is one recipe measure (a shot of coffee, a serving of milk or tea, one croissant), so recipes stay whole numbers. Ingredient prices keep each product's cost as before, except Kopi O (RM0.80 instead of RM1.00) and Americano (RM1.60 instead of RM1.50), since both are now priced by their coffee. Ingredient storage holds up to 5,000 units each, enough for any stock an older save converts into.
 - **Six screens, five tabs:** Menu and Inventory share the *Menu* tab as sub-tabs. Staff, Upgrades and Objectives sit under *Urus*. Reports, the ledger and loans sit under *Kewangan*. Settings opens from the header.
 - **Day flow:** `prep → (open) → closed → next day`. Editing is locked while closed so every transaction belongs to exactly one day's report.
 - **Marketing** is charged when the café opens. If cash is no longer sufficient, the promotion is cancelled and noted in the report.
@@ -226,13 +237,13 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 ## Known limitations
 
 - Saves are local to one browser on one device, and there is no cloud sync. Use Settings → export/import to back up a game or move it to another device. Clearing site data without an exported file erases progress. Playing in two tabs is safe but not simultaneous: the most recent save wins and the other tab follows it.
-- Single café only. There is no multi-branch "empire" layer, ingredient-level recipes or staff morale.
+- Single café only. There is no multi-branch "empire" layer or staff morale.
 - Report history keeps the latest 60 days. Lifetime totals are kept in stats.
 - Balance is tuned with a scripted bot over ~45 days and would benefit from playtesting.
 
 ## Recommended next steps
 
-1. Add a second-branch expansion and ingredient-level inventory (beans, milk, tea, pastry).
+1. Add a second-branch expansion.
 2. Support localisation (English) through a string table.
 3. Add a forecast of today's revenue next to the sales goal, so players can judge how much stock and staff the goal needs.
 

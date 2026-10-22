@@ -10,7 +10,7 @@ import { activeLoanView, loanOfferViews } from '../selectors';
 import { sumSen } from '../money';
 import type { DayReport, GameState } from '../types';
 import { validateGameState } from '../validate';
-import { expectFail, expectOk, newGame, playDays, settle, stockAll } from './helpers';
+import { expectFail, expectOk, newGame, playDays, settle, stockAll, viaProductStock, withProductStock } from './helpers';
 
 /** Enough completed objectives for café level 2 (45 XP). */
 function atLevel2(state: GameState): GameState {
@@ -233,7 +233,7 @@ describe('borrowed money and objectives', () => {
 describe('saves with loans', () => {
   /** Remove every field schema v3 added, giving the shape a v2 build wrote. */
   function asV2Save(game: GameState): unknown {
-    const g = structuredClone(game) as unknown as Record<string, unknown> & {
+    const g = withProductStock(game) as Record<string, unknown> & {
       dayStart: Record<string, unknown>;
       stats: Record<string, unknown>;
       history: (Record<string, unknown> & { expenses: Record<string, unknown> })[];
@@ -260,8 +260,10 @@ describe('saves with loans', () => {
     const validated = validateGameState(migrated.game);
     expect(validated.ok).toBe(true);
     if (!validated.ok) return;
-    expect(validated.state).toEqual(state);
+    // Equal to the same game loaded from the last pre-ingredient format (stock was per product then).
+    expect(validated.state).toEqual(viaProductStock(state));
     expect(validated.state.history.every((r) => reconcileReport(r).ok)).toBe(true);
+    expect(validated.state.dayStart.inventorySen).toBe(state.dayStart.inventorySen);
   });
 
   it('a v2 save without the loan fields does not validate as v3', () => {

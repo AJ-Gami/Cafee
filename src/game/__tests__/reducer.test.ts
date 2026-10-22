@@ -44,11 +44,11 @@ describe('game reducer', () => {
   });
 
   it('shows clear feedback for successful and failed purchases', () => {
-    const ok = gameReducer(initStore(newGame()), { type: 'PURCHASE', productId: 'latte', quantity: 10 });
+    const ok = gameReducer(initStore(newGame()), { type: 'PURCHASE', ingredientId: 'susu', quantity: 10 });
     expect(ok.feedback?.kind).toBe('success');
-    expect(ok.feedback?.message).toContain('Latte');
+    expect(ok.feedback?.message).toContain('Susu segar');
     const poor = initStore({ ...newGame(), cashSen: 50 });
-    const failed = gameReducer(poor, { type: 'PURCHASE', productId: 'latte', quantity: 10 });
+    const failed = gameReducer(poor, { type: 'PURCHASE', ingredientId: 'susu', quantity: 10 });
     expect(failed.feedback?.kind).toBe('error');
     expect(failed.feedback?.message).toContain('Tunai tidak mencukupi');
     expect(failed.game).toBe(poor.game);
@@ -73,7 +73,7 @@ describe('game reducer', () => {
   });
 
   it('dismisses only the matching feedback', () => {
-    const store = gameReducer(initStore(newGame()), { type: 'PURCHASE', productId: 'latte', quantity: 1 });
+    const store = gameReducer(initStore(newGame()), { type: 'PURCHASE', ingredientId: 'susu', quantity: 1 });
     const id = store.feedback?.id ?? -1;
     expect(gameReducer(store, { type: 'DISMISS_FEEDBACK', id: id + 1 }).feedback).not.toBeNull();
     expect(gameReducer(store, { type: 'DISMISS_FEEDBACK', id }).feedback).toBeNull();

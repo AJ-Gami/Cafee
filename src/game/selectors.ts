@@ -2,15 +2,27 @@
  * Read-only views over the game state for the UI. Every number the UI shows
  * (margins, estimates, quotes, capacity) comes from here or the engine.
  */
-import { LOW_STOCK_RATIO, MAX_PURCHASE_QTY, MAX_STOCK_PER_PRODUCT } from './constants';
+import { MAX_PURCHASE_QTY, MAX_STOCK_PER_INGREDIENT } from './constants';
 import { EVENTS } from './data/events';
+import { INGREDIENTS } from './data/ingredients';
 import { LOAN_OFFER_ORDER, LOAN_OFFERS, type LoanOfferDef } from './data/loans';
 import { OBJECTIVES } from './data/objectives';
 import { PRODUCTS } from './data/products';
 import { PROMOTION_ORDER, PROMOTIONS, type PromotionDef } from './data/promotions';
 import { UPGRADE_ORDER, UPGRADES, type UpgradeDef } from './data/upgrades';
 import { estimateDemand, modifiersForState, reputationPoints, salePrice, weekdayIndex, type DemandEstimate } from './demand';
-import { averageUnitCost, canAfford, inventoryValue, projectedFixedCosts, quotePurchase, todaysUnitCost } from './economy';
+import {
+  averageUnitCost,
+  canAfford,
+  inventoryValue,
+  projectedFixedCosts,
+  quotePurchase,
+  recipeCostToday,
+  recipeOf,
+  servingsAvailable,
+  spoilageRate,
+  todaysUnitCost,
+} from './economy';
 import { bookValue, newAsset, nextCharge, totalBookValue } from './assets';
 import { isEventVisibleInPrep, resolveEvent } from './events';
 import { GOAL_TITLE, goalRaisePercent } from './goals';
@@ -18,8 +30,8 @@ import { installment, offerTotalInterest, remainingPrincipal, settlementQuote, t
 import { formatRM, marginPercent } from './money';
 import { currentLevel, isObjectiveComplete } from './objectives';
 import { candidatesForState, hourlyCapacity, staffSlots } from './staff';
-import type { ActiveLoan, DayGoal, DayReport, GameState, ProductId, StaffCandidate } from './types';
-import { PRODUCT_IDS } from './types';
+import type { ActiveLoan, DayGoal, DayReport, GameState, IngredientId, ProductId, StaffCandidate } from './types';
+import { INGREDIENT_IDS, PRODUCT_IDS } from './types';
 
 /** Demand estimate using only information the player can see (forecast events, not surprises). */
 export function dayEstimate(state: GameState): DemandEstimate {
@@ -47,6 +59,13 @@ export const PRICE_PERCEPTION_LABEL: Record<PricePerception, string> = {
 
 export type StockLevel = 'out' | 'low' | 'ok' | 'off';
 
+export interface RecipeItem {
+  ingredientId: IngredientId;
+  name: string;
+  qty: number;
+  unitLabel: string;
+}
+
 export interface ProductView {
   id: ProductId;
   name: string;
@@ -54,70 +73,141 @@ export interface ProductView {
   priceSen: number;
   /** Price after today's promotion discount. */
   salePriceSen: number;
-  /** Supplier cost per unit today (includes event surcharge). */
+  /** Cost of one unit's ingredients at today's supplier prices (event surcharges included). */
   unitCostSen: number;
-  surchargeBps: number;
+  costRaisedToday: boolean;
   marginSen: number;
   marginPct: number;
   perception: PricePerception;
+  recipe: RecipeItem[];
+  /** How many the ingredients on hand can make, if no other product used them. */
+  servings: number;
+  estimatedDemand: number;
+  /** out: cannot make one; low: an ingredient falls short of today's estimated need across the menu. */
+  stockLevel: StockLevel;
+}
+
+export interface IngredientView {
+  id: IngredientId;
+  name: string;
+  description: string;
+  unitLabel: string;
   stock: number;
   stockValueSen: number;
   avgCostSen: number;
-  estimatedDemand: number;
+  /** Supplier cost per unit today (includes event surcharge). */
+  unitCostSen: number;
+  surchargeBps: number;
+  /** Units today's estimated sales would use, over every product on the menu. */
+  estimatedNeed: number;
+  /** off: no product on today's menu uses it. */
   stockLevel: StockLevel;
   suggestedPurchase: number;
-  spoilageRate: number;
   maxPurchase: number;
+  /** Share of the units left at closing that spoil overnight (after upgrades). */
+  spoilageRate: number;
+  usedBy: { productId: ProductId; name: string; qty: number }[];
+}
+
+function recipeItems(productId: ProductId): RecipeItem[] {
+  return recipeOf(productId).map(([ingredientId, qty]) => ({
+    ingredientId,
+    name: INGREDIENTS[ingredientId].name,
+    qty,
+    unitLabel: INGREDIENTS[ingredientId].unitLabel,
+  }));
+}
+
+/** Units of each ingredient today's estimated sales would use. */
+function ingredientNeeds(state: GameState): Record<IngredientId, number> {
+  const estimate = dayEstimate(state);
+  const need = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, 0])) as Record<IngredientId, number>;
+  for (const productId of PRODUCT_IDS) {
+    if (!state.products[productId].enabled) continue;
+    for (const [id, qty] of recipeOf(productId)) need[id] += estimate.perProduct[productId] * qty;
+  }
+  return need;
 }
 
 export function productViews(state: GameState): ProductView[] {
   const estimate = dayEstimate(state);
+  const need = ingredientNeeds(state);
   const visibleEvent = isEventVisibleInPrep(state.todayEventId) ? resolveEvent(state.todayEventId, state.upgrades) : null;
   const mods = modifiersForState(state, visibleEvent);
   return PRODUCT_IDS.map((id) => {
     const p = state.products[id];
     const def = PRODUCTS[id];
-    const { unitCostSen, surchargeBps } = todaysUnitCost(state, id);
-    const est = estimate.perProduct[id];
+    const { unitCostSen, surcharged } = recipeCostToday(state, id);
+    const servings = servingsAvailable(state.ingredients, id);
     let stockLevel: StockLevel = 'ok';
     if (!p.enabled) stockLevel = 'off';
-    else if (p.stock === 0) stockLevel = 'out';
-    else if (p.stock < est * LOW_STOCK_RATIO || p.stock < est) stockLevel = 'low';
-    // Perishables get a smaller safety buffer.
-    const buffer = def.spoilageRate >= 0.2 ? 1.0 : 1.15;
-    const target = Math.ceil((est * buffer) / 5) * 5;
-    const suggestedPurchase = p.enabled ? Math.max(0, Math.min(target - p.stock, MAX_STOCK_PER_PRODUCT - p.stock)) : 0;
-    const priceSen = p.priceSen;
+    else if (servings === 0) stockLevel = 'out';
+    else if (recipeOf(id).some(([ingredient]) => state.ingredients[ingredient].stock < need[ingredient])) stockLevel = 'low';
     const sp = salePrice(p, mods);
     return {
       id,
       name: def.name,
       enabled: p.enabled,
-      priceSen,
+      priceSen: p.priceSen,
       salePriceSen: sp,
       unitCostSen,
-      surchargeBps,
+      costRaisedToday: surcharged,
       marginSen: sp - unitCostSen,
       marginPct: marginPercent(sp, unitCostSen),
       perception: pricePerception(id, sp),
-      stock: p.stock,
-      stockValueSen: p.stockValueSen,
-      avgCostSen: averageUnitCost(p),
-      estimatedDemand: est,
+      recipe: recipeItems(id),
+      servings,
+      estimatedDemand: estimate.perProduct[id],
       stockLevel,
-      suggestedPurchase,
-      spoilageRate: def.spoilageRate,
-      maxPurchase: Math.max(0, Math.min(MAX_PURCHASE_QTY, MAX_STOCK_PER_PRODUCT - p.stock)),
     };
   });
 }
 
-export function restockPlan(state: GameState): { items: { productId: ProductId; quantity: number }[]; totalSen: number } {
-  const items = productViews(state)
-    .filter((v) => v.suggestedPurchase > 0)
-    .map((v) => ({ productId: v.id, quantity: Math.min(v.suggestedPurchase, v.maxPurchase) }))
+export function ingredientViews(state: GameState): IngredientView[] {
+  const need = ingredientNeeds(state);
+  return INGREDIENT_IDS.map((id) => {
+    const item = state.ingredients[id];
+    const def = INGREDIENTS[id];
+    const { unitCostSen, surchargeBps } = todaysUnitCost(state, id);
+    const users = PRODUCT_IDS.filter((p) => state.products[p].enabled && (PRODUCTS[p].recipe[id] ?? 0) > 0);
+    const minUse = Math.min(...users.map((p) => PRODUCTS[p].recipe[id] ?? 0));
+    let stockLevel: StockLevel = 'ok';
+    if (users.length === 0) stockLevel = 'off';
+    else if (item.stock < minUse) stockLevel = 'out';
+    else if (item.stock < need[id]) stockLevel = 'low';
+    const rate = spoilageRate(id, state.upgrades);
+    // Perishables get a smaller safety buffer.
+    const target = Math.ceil((need[id] * (rate >= 0.2 ? 1.0 : 1.15)) / 5) * 5;
+    const room = MAX_STOCK_PER_INGREDIENT - item.stock;
+    return {
+      id,
+      name: def.name,
+      description: def.description,
+      unitLabel: def.unitLabel,
+      stock: item.stock,
+      stockValueSen: item.stockValueSen,
+      avgCostSen: averageUnitCost(item),
+      unitCostSen,
+      surchargeBps,
+      estimatedNeed: need[id],
+      stockLevel,
+      suggestedPurchase: users.length > 0 ? Math.max(0, Math.min(target - item.stock, room)) : 0,
+      maxPurchase: Math.max(0, Math.min(MAX_PURCHASE_QTY, room)),
+      spoilageRate: rate,
+      usedBy: PRODUCT_IDS.filter((p) => (PRODUCTS[p].recipe[id] ?? 0) > 0).map((p) => ({
+        productId: p,
+        name: PRODUCTS[p].name,
+        qty: PRODUCTS[p].recipe[id] ?? 0,
+      })),
+    };
+  });
+}
+
+export function restockPlan(state: GameState): { items: { ingredientId: IngredientId; quantity: number }[]; totalSen: number } {
+  const items = ingredientViews(state)
+    .map((v) => ({ ingredientId: v.id, quantity: Math.min(v.suggestedPurchase, v.maxPurchase) }))
     .filter((i) => i.quantity > 0);
-  const totalSen = items.reduce((sum, i) => sum + quotePurchase(state, i.productId, i.quantity).totalSen, 0);
+  const totalSen = items.reduce((sum, i) => sum + quotePurchase(state, i.ingredientId, i.quantity).totalSen, 0);
   return { items, totalSen };
 }
 
@@ -265,7 +355,7 @@ export function fixedCostsView(state: GameState) {
 }
 
 export function currentInventoryValue(state: GameState): number {
-  return inventoryValue(state.products);
+  return inventoryValue(state.ingredients);
 }
 
 /** Sum of today's preparation cash movements by type (for the live ledger). */
@@ -356,7 +446,7 @@ export function previewPrice(state: GameState, productId: ProductId, priceSen: n
   const visibleEvent = isEventVisibleInPrep(state.todayEventId) ? resolveEvent(state.todayEventId, state.upgrades) : null;
   const mods = modifiersForState(state, visibleEvent);
   const sale = salePrice({ ...state.products[productId], priceSen }, mods);
-  const { unitCostSen } = todaysUnitCost(state, productId);
+  const { unitCostSen } = recipeCostToday(state, productId);
   return {
     priceSen,
     salePriceSen: sale,

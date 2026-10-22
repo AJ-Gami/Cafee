@@ -19,10 +19,11 @@ import {
   WEEKDAY_FACTORS,
   WEEKDAY_NAMES,
 } from './constants';
+import { INGREDIENTS } from './data/ingredients';
 import { PRODUCTS } from './data/products';
 import { PROMOTIONS, type PromotionDef } from './data/promotions';
 import { UPGRADES } from './data/upgrades';
-import { takeFromStock } from './economy';
+import { missingIngredient, recipeOf, takeFromStock } from './economy';
 import type { ResolvedEvent } from './events';
 import { applyBps } from './money';
 import type { Rng } from './rng';
@@ -31,13 +32,15 @@ import type {
   CustomerSummary,
   GameState,
   HourlyLine,
+  IngredientId,
+  IngredientState,
   ProductId,
   ProductState,
   StaffMember,
   TimelineEntry,
   UpgradeId,
 } from './types';
-import { PRODUCT_IDS } from './types';
+import { INGREDIENT_IDS, PRODUCT_IDS } from './types';
 
 /** Event effects that only apply from the hour the event happens (forecast events start at opening). */
 export interface EventModifiers {
@@ -240,7 +243,9 @@ export function estimateDemand(
 export interface SimulationInput {
   day: number;
   reputation: number;
+  /** Prices and menu (stock is held per ingredient). */
   products: Record<ProductId, ProductState>;
+  ingredients: Record<IngredientId, IngredientState>;
   baseHourlyCapacity: number;
   mods: DemandModifiers;
   extraOrders?: { hour: number; items: Partial<Record<ProductId, number>> };
@@ -256,7 +261,9 @@ export interface ProductSimLine {
 }
 
 export interface SimulationOutput {
-  products: Record<ProductId, ProductState>;
+  ingredients: Record<IngredientId, IngredientState>;
+  /** Ingredient units used by the products sold, and their carrying value (the day's COGS). */
+  used: Record<IngredientId, { units: number; valueSen: number }>;
   lines: Record<ProductId, ProductSimLine>;
   hourly: HourlyLine[];
   customers: CustomerSummary;
@@ -267,8 +274,10 @@ export interface SimulationOutput {
 }
 
 export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput {
-  const { mods } = input;
-  const products = { ...input.products };
+  const { mods, products } = input;
+  const ingredients = { ...input.ingredients };
+  const used = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, { units: 0, valueSen: 0 }])) as SimulationOutput['used'];
+  const canMake = (id: ProductId): boolean => missingIngredient(ingredients, id) === null;
   const lines = Object.fromEntries(
     PRODUCT_IDS.map((id) => [
       id,
@@ -283,30 +292,42 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
   const soldOutAnnounced = new Set<ProductId>();
   let extraOrder: SimulationOutput['extraOrder'] = null;
 
+  const ingredientName = (id: IngredientId): string => INGREDIENTS[id].name.toLowerCase();
   for (const id of enabled) {
-    if (products[id].stock === 0) {
+    const missing = missingIngredient(ingredients, id);
+    if (missing) {
       soldOutAnnounced.add(id);
-      timeline.push({ hour: OPEN_HOUR, tone: 'bad', text: `${PRODUCTS[id].name} tiada stok sejak pagi.` });
+      timeline.push({ hour: OPEN_HOUR, tone: 'bad', text: `${PRODUCTS[id].name} tidak boleh dibuat sejak pagi — ${ingredientName(missing)} tidak cukup.` });
     }
   }
 
   const sell = (id: ProductId, hour: number, line: HourlyLine): void => {
-    const taken = takeFromStock(products[id], 1);
-    products[id] = taken.product;
+    let costSen = 0;
+    for (const [ingredient, qty] of recipeOf(id)) {
+      const taken = takeFromStock(ingredients[ingredient], qty);
+      ingredients[ingredient] = taken.item;
+      used[ingredient].units += qty;
+      used[ingredient].valueSen += taken.costSen;
+      costSen += taken.costSen;
+    }
     const l = lines[id];
     l.sold += 1;
     l.revenueSen += l.salePriceSen;
-    l.cogsSen += taken.costSen;
+    l.cogsSen += costSen;
     line.revenueSen += l.salePriceSen;
-    if (products[id].stock === 0 && !soldOutAnnounced.has(id)) {
-      soldOutAnnounced.add(id);
-      timeline.push({ hour, tone: 'warn', text: `${PRODUCTS[id].name} habis dijual.` });
+    // A shared ingredient running out can stop other products too.
+    for (const other of enabled) {
+      if (soldOutAnnounced.has(other)) continue;
+      const missing = missingIngredient(ingredients, other);
+      if (!missing) continue;
+      soldOutAnnounced.add(other);
+      timeline.push({ hour, tone: 'warn', text: `${PRODUCTS[other].name} habis — ${ingredientName(missing)} tidak cukup.` });
     }
   };
 
   const pickAlternative = (exclude: ProductId, hm: DemandModifiers): ProductId | undefined =>
     rng.weighted(
-      enabled.filter((id) => id !== exclude && products[id].stock > 0),
+      enabled.filter((id) => id !== exclude && canMake(id)),
       (id) => choiceWeight(id, lines[id].salePriceSen, hm),
     );
 
@@ -338,10 +359,13 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
         if (qty <= 0) continue;
         requested += qty;
         lines[id].demanded += qty;
-        const available = products[id].enabled ? Math.min(qty, products[id].stock) : 0;
-        for (let i = 0; i < available; i++) sell(id, hour, line);
-        fulfilled += available;
-        lines[id].unmetStockout += qty - available;
+        let made = 0;
+        while (made < qty && products[id].enabled && canMake(id)) {
+          sell(id, hour, line);
+          made += 1;
+        }
+        fulfilled += made;
+        lines[id].unmetStockout += qty - made;
       }
       extraOrder = { requested, fulfilled };
     }
@@ -364,7 +388,7 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
       lines[desired].demanded += 1;
       let bought: ProductId | undefined;
 
-      if (products[desired].stock === 0) {
+      if (!canMake(desired)) {
         lines[desired].unmetStockout += 1;
         if (rng.chance(SUBSTITUTE_ON_STOCKOUT)) {
           const alt = pickAlternative(desired, hm);
@@ -395,7 +419,7 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
           if (addOn === bought) continue;
           if (!rng.chance(addOnProbability(addOn, lines[addOn].salePriceSen, hm))) continue;
           lines[addOn].demanded += 1;
-          if (products[addOn].stock > 0) sell(addOn, hour, line);
+          if (canMake(addOn)) sell(addOn, hour, line);
           else lines[addOn].unmetStockout += 1;
         }
       }
@@ -444,7 +468,7 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
   else if (enabled.length > 0)
     priceIndex = enabled.reduce((a, id) => a + lines[id].salePriceSen / PRODUCTS[id].referencePriceSen, 0) / enabled.length;
 
-  return { products, lines, hourly, customers, timeline, priceIndex, extraOrder };
+  return { ingredients, used, lines, hourly, customers, timeline, priceIndex, extraOrder };
 }
 
 // ---------------------------------------------------------------------------

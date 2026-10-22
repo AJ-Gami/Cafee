@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { EVENTS } from '../data/events';
-import { buyUpgrade, purchaseStock } from '../engine';
+import { buyUpgrade, purchaseStock, purchaseStockBatch } from '../engine';
 import { resolveEvent, rollEventForDay } from '../events';
 import { reconcileReport } from '../reports';
 import { visibleTodayEvent } from '../selectors';
-import { expectOk, newGame, settle, soldOf, stockAll, withEvent } from './helpers';
+import { expectOk, newGame, purchaseLines, settle, soldOf, stockAll, withEvent } from './helpers';
 
 describe('event rolls', () => {
   it('are reproducible for the same seed and day', () => {
@@ -112,7 +112,7 @@ describe('event effects', () => {
   it('office order sells extra units from stock, limited by stock on hand', () => {
     const full = settle(withEvent(stocked(), 'office_order')).report;
     expect(full.eventOutcome).toContain('20/20');
-    const tight = expectOk(purchaseStock(withEvent(newGame(), 'office_order'), 'latte', 5)).state;
+    const tight = expectOk(purchaseStockBatch(withEvent(newGame(), 'office_order'), purchaseLines({ kopi: 5, susu: 10 }))).state;
     const partial = settle(tight).report;
     expect(soldOf(partial, 'latte')).toBeLessThanOrEqual(5);
     expect(partial.eventOutcome).toContain('/20');
@@ -126,8 +126,11 @@ describe('event effects', () => {
   });
 
   it('coffee price spike makes today’s coffee stock more expensive', () => {
-    const normal = expectOk(purchaseStock(newGame(), 'latte', 10)).state;
-    const spiked = expectOk(purchaseStock(withEvent(newGame(), 'coffee_price_spike'), 'latte', 10)).state;
-    expect(spiked.products.latte.stockValueSen).toBeGreaterThan(normal.products.latte.stockValueSen);
+    const normal = expectOk(purchaseStock(newGame(), 'kopi', 10)).state;
+    const spiked = expectOk(purchaseStock(withEvent(newGame(), 'coffee_price_spike'), 'kopi', 10)).state;
+    expect(spiked.ingredients.kopi.stockValueSen).toBe(1_000);
+    expect(normal.ingredients.kopi.stockValueSen).toBe(800);
+    const milk = expectOk(purchaseStock(withEvent(newGame(), 'coffee_price_spike'), 'susu', 10)).state;
+    expect(milk.ingredients.susu.stockValueSen).toBe(700);
   });
 });

@@ -84,6 +84,7 @@ function ProductMenuCard({ view, locked }: { view: ProductView; locked: boolean 
             {!view.enabled ? <Badge>Tiada dalam menu</Badge> : null}
           </h2>
           <p className="text-sm text-espresso-600">{def.description}</p>
+          <p className="mt-0.5 text-xs text-espresso-600">Resipi: {view.recipe.map((r) => `${r.qty} ${r.unitLabel} ${r.name.toLowerCase()}`).join(' + ')}</p>
         </div>
         <Switch
           checked={view.enabled}
@@ -131,9 +132,10 @@ function ProductMenuCard({ view, locked }: { view: ProductView; locked: boolean 
 
       <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
         <div className="rounded-xl bg-cream-100 p-2">
-          <dt className="text-[11px] font-semibold uppercase text-espresso-600">Kos seunit</dt>
+          <dt className="text-[11px] font-semibold uppercase text-espresso-600">Kos bahan</dt>
           <dd className="font-semibold">
             <Money sen={view.unitCostSen} />
+            {view.costRaisedToday ? <span className="block text-[11px] font-semibold text-honey-700">naik hari ini</span> : null}
           </dd>
         </div>
         <div className="rounded-xl bg-cream-100 p-2">

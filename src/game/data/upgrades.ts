@@ -1,4 +1,4 @@
-import type { ProductId, UpgradeId } from '../types';
+import type { IngredientId, ProductId, UpgradeId } from '../types';
 
 export interface UpgradeEffects {
   trafficMultiplier?: number;
@@ -8,7 +8,7 @@ export interface UpgradeEffects {
   capacityMultiplier?: number;
   conversionBonus?: number;
   productDemand?: Partial<Record<ProductId, number>>;
-  spoilageMultiplier?: Partial<Record<ProductId, number>>;
+  spoilageMultiplier?: Partial<Record<IngredientId, number>>;
   reputationPerDay?: number;
   utilitiesSenPerDay?: number;
   staffSlots?: number;
@@ -42,8 +42,8 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     description: 'Peti sejuk berkaca yang menarik mata dan memanjangkan kesegaran pastri.',
     costSen: 85_000,
     minLevel: 1,
-    effects: { productDemand: { croissant: 1.35 }, spoilageMultiplier: { croissant: 0.4 } },
-    effectSummary: ['+35% permintaan Croissant', '−60% pembaziran Croissant'],
+    effects: { productDemand: { croissant: 1.35 }, spoilageMultiplier: { pastri: 0.4 } },
+    effectSummary: ['+35% permintaan Croissant', '−60% pembaziran doh croissant'],
   },
   signage: {
     id: 'signage',
@@ -106,7 +106,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
     costSen: 220_000,
     minLevel: 3,
     effects: { supplierDiscountBps: 1_000 },
-    effectSummary: ['−10% kos seunit semua produk'],
+    effectSummary: ['−10% kos seunit semua bahan'],
   },
 };
 

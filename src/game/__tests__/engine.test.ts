@@ -16,8 +16,9 @@ import {
 import { reconcileReport } from '../reports';
 import { hiringCandidates } from '../selectors';
 import { sumSen } from '../money';
-import { PRODUCT_IDS, type GameState } from '../types';
-import { expectFail, expectOk, newGame, playDays, settle, soldOf, stockAll, TEST_SEED, withEvent } from './helpers';
+import { recipeCostToday } from '../economy';
+import { INGREDIENT_IDS, PRODUCT_IDS, type GameState } from '../types';
+import { expectFail, expectOk, newGame, playDays, purchaseLines, settle, soldOf, stockAll, TEST_SEED, withEvent } from './helpers';
 
 describe('new game', () => {
   it('starts with RM5,000, reputation 50, one barista and five products', () => {
@@ -27,11 +28,17 @@ describe('new game', () => {
     expect(s.staff).toHaveLength(1);
     expect(s.staff[0]?.role).toBe('barista');
     expect(Object.keys(s.products)).toHaveLength(5);
-    expect(s.products.kopi_o).toMatchObject({ priceSen: 350, unitCostSen: 100, enabled: true, stock: 0 });
-    expect(s.products.americano).toMatchObject({ priceSen: 500, unitCostSen: 150 });
-    expect(s.products.latte).toMatchObject({ priceSen: 700, unitCostSen: 220 });
-    expect(s.products.teh_ais).toMatchObject({ priceSen: 350, unitCostSen: 120 });
-    expect(s.products.croissant).toMatchObject({ priceSen: 550, unitCostSen: 200 });
+    expect(s.products.kopi_o).toEqual({ id: 'kopi_o', priceSen: 350, enabled: true });
+    expect(s.products.americano).toMatchObject({ priceSen: 500 });
+    expect(s.products.latte).toMatchObject({ priceSen: 700 });
+    expect(s.products.teh_ais).toMatchObject({ priceSen: 350 });
+    expect(s.products.croissant).toMatchObject({ priceSen: 550 });
+    expect(s.ingredients).toEqual({
+      kopi: { id: 'kopi', unitCostSen: 80, stock: 0, stockValueSen: 0 },
+      susu: { id: 'susu', unitCostSen: 70, stock: 0, stockValueSen: 0 },
+      teh: { id: 'teh', unitCostSen: 50, stock: 0, stockValueSen: 0 },
+      pastri: { id: 'pastri', unitCostSen: 200, stock: 0, stockValueSen: 0 },
+    });
     expect(s.day).toBe(1);
     expect(s.phase).toBe('prep');
   });
@@ -39,53 +46,59 @@ describe('new game', () => {
 
 describe('stock purchasing', () => {
   it('reduces cash immediately and records a transaction', () => {
-    const r = expectOk(purchaseStock(newGame(), 'latte', 20));
-    expect(r.state.cashSen).toBe(STARTING_CASH_SEN - 4_400);
-    expect(r.state.products.latte.stock).toBe(20);
-    expect(r.state.products.latte.stockValueSen).toBe(4_400);
+    const r = expectOk(purchaseStock(newGame(), 'susu', 20));
+    expect(r.state.cashSen).toBe(STARTING_CASH_SEN - 1_400);
+    expect(r.state.ingredients.susu.stock).toBe(20);
+    expect(r.state.ingredients.susu.stockValueSen).toBe(1_400);
     expect(r.state.dayTransactions).toEqual([
-      expect.objectContaining({ type: 'stock_purchase', amountSen: -4_400, productId: 'latte', quantity: 20 }),
+      expect.objectContaining({ type: 'stock_purchase', amountSen: -1_400, ingredientId: 'susu', quantity: 20, label: 'Beli Susu segar ×20' }),
     ]);
   });
 
   it('rejects purchases the café cannot afford and leaves state unchanged', () => {
     const poor = { ...newGame(), cashSen: 1_000 };
-    const r = expectFail(purchaseStock(poor, 'latte', 10)); // RM22 needed
+    const r = expectFail(purchaseStock(poor, 'pastri', 10)); // RM20 needed
     expect(r.error).toBe('INSUFFICIENT_FUNDS');
     expect(r.message).toContain('Tunai tidak mencukupi');
-    expect(poor.products.latte.stock).toBe(0);
+    expect(poor.ingredients.pastri.stock).toBe(0);
   });
 
   it('allows spending exactly all cash', () => {
-    const s = { ...newGame(), cashSen: 2_200 };
-    const r = expectOk(purchaseStock(s, 'latte', 10));
+    const s = { ...newGame(), cashSen: 2_000 };
+    const r = expectOk(purchaseStock(s, 'pastri', 10));
     expect(r.state.cashSen).toBe(0);
   });
 
   it('is atomic for batch purchases', () => {
-    const s = { ...newGame(), cashSen: 3_000 };
+    const s = { ...newGame(), cashSen: 2_500 };
     const r = expectFail(
       purchaseStockBatch(s, [
-        { productId: 'kopi_o', quantity: 10 }, // RM10
-        { productId: 'latte', quantity: 10 }, // RM22 -> total RM32 > RM30
+        { ingredientId: 'kopi', quantity: 10 }, // RM8
+        { ingredientId: 'pastri', quantity: 10 }, // RM20 -> total RM28 > RM25
       ]),
     );
     expect(r.error).toBe('INSUFFICIENT_FUNDS');
-    expect(s.products.kopi_o.stock).toBe(0);
+    expect(s.ingredients.kopi.stock).toBe(0);
   });
 
-  it('rejects invalid quantities', () => {
+  it('rejects invalid quantities and unknown ingredients', () => {
     const s = newGame();
-    expect(expectFail(purchaseStock(s, 'latte', 0)).error).toBe('INVALID_QUANTITY');
-    expect(expectFail(purchaseStock(s, 'latte', -5)).error).toBe('INVALID_QUANTITY');
-    expect(expectFail(purchaseStock(s, 'latte', 2.5)).error).toBe('INVALID_QUANTITY');
-    expect(expectFail(purchaseStock(s, 'latte', 501)).error).toBe('INVALID_QUANTITY');
+    expect(expectFail(purchaseStock(s, 'susu', 0)).error).toBe('INVALID_QUANTITY');
+    expect(expectFail(purchaseStock(s, 'susu', -5)).error).toBe('INVALID_QUANTITY');
+    expect(expectFail(purchaseStock(s, 'susu', 2.5)).error).toBe('INVALID_QUANTITY');
+    expect(expectFail(purchaseStock(s, 'susu', 501)).error).toBe('INVALID_QUANTITY');
+    expect(expectFail(purchaseStock(s, 'latte' as unknown as 'susu', 5)).error).toBe('UNKNOWN_ITEM');
   });
 
-  it('enforces storage capacity', () => {
-    let s = expectOk(purchaseStock(newGame(), 'kopi_o', 500)).state;
-    s = expectOk(purchaseStock(s, 'kopi_o', 499)).state;
-    expect(expectFail(purchaseStock(s, 'kopi_o', 1)).error).toBe('STORAGE_FULL');
+  it('enforces storage capacity, over a whole batch too', () => {
+    const rich = { ...newGame(), cashSen: 10_000_000 };
+    let s = rich;
+    for (let i = 0; i < 9; i++) s = expectOk(purchaseStock(s, 'teh', 500)).state;
+    s = expectOk(purchaseStock(s, 'teh', 499)).state;
+    expect(s.ingredients.teh.stock).toBe(4_999);
+    expect(expectFail(purchaseStock(s, 'teh', 2)).error).toBe('STORAGE_FULL');
+    const batch = Array.from({ length: 11 }, () => ({ ingredientId: 'kopi' as const, quantity: 500 }));
+    expect(expectFail(purchaseStockBatch(rich, batch)).error).toBe('STORAGE_FULL');
   });
 });
 
@@ -105,9 +118,10 @@ describe('menu management', () => {
     const { report, state } = settle(s);
     expect(soldOf(report, 'latte')).toBe(0);
     expect(soldOf(report, 'croissant')).toBe(0);
-    // Disabled stock is kept (perishables still spoil overnight).
-    const latte = report.products.find((l) => l.productId === 'latte');
-    expect(state.products.latte.stock).toBe(60 - (latte?.spoiledUnits ?? 0));
+    // Pastry no product on the menu uses is kept (perishables still spoil overnight).
+    const pastry = report.ingredients?.find((l) => l.ingredientId === 'pastri');
+    expect(pastry?.used).toBe(0);
+    expect(state.ingredients.pastri.stock).toBe(60 - (pastry?.spoiled ?? 0));
     expect(report.customers.served).toBeGreaterThan(0);
   });
 
@@ -123,14 +137,15 @@ describe('menu management', () => {
 
 describe('daily settlement accounting', () => {
   it('computes revenue, COGS and net profit from actual sales', () => {
-    const s = stockAll(newGame(), 45); // below the bulk-discount threshold
+    const s = expectOk(purchaseStockBatch(newGame(), purchaseLines({ kopi: 45, susu: 45, teh: 45, pastri: 45 }))).state; // no bulk discount
     const { report, state } = settle(s);
     const revenue = sumSen(report.products.map((l) => l.sold * l.salePriceSen));
     expect(report.revenueSen).toBe(revenue);
     expect(report.revenueSen).toBeGreaterThan(0);
-    // All stock bought at the same unit cost, so COGS = sold * unit cost.
-    const cogs = sumSen(report.products.map((l) => l.sold * s.products[l.productId].unitCostSen));
+    // Every ingredient bought at its list price, so COGS = units sold × recipe cost.
+    const cogs = sumSen(report.products.map((l) => l.sold * recipeCostToday(s, l.productId).unitCostSen));
     expect(report.cogsSen).toBe(cogs);
+    expect(sumSen(report.ingredients!.map((l) => l.usedValueSen))).toBe(cogs);
     expect(report.grossProfitSen).toBe(report.revenueSen - report.cogsSen);
     expect(report.expenses.rentSen).toBe(RENT_SEN_PER_DAY);
     expect(report.expenses.wagesSen).toBe(9_000);
@@ -142,15 +157,29 @@ describe('daily settlement accounting', () => {
   });
 
   it('does not count unsold stock as cost of goods sold', () => {
-    const s = expectOk(purchaseStock(newGame(), 'kopi_o', 300)).state;
+    const s = expectOk(purchaseStock(newGame(), 'kopi', 400)).state;
     const { report, state } = settle(s);
-    const sold = soldOf(report, 'kopi_o');
-    expect(sold).toBeLessThan(300);
-    // 8% bulk discount: RM276 for 300 units = 92 sen each.
-    expect(report.stockPurchasesSen).toBe(27_600);
-    expect(report.cogsSen).toBe(sold * 92);
-    expect(state.products.kopi_o.stock).toBe(300 - sold);
-    expect(report.closingInventorySen).toBe(state.products.kopi_o.stockValueSen);
+    const shots = soldOf(report, 'kopi_o') + 2 * soldOf(report, 'americano');
+    expect(shots).toBeGreaterThan(0);
+    expect(shots).toBeLessThan(400);
+    // 8% bulk discount: RM294.40 for 400 measures (73.6 sen each, taken at weighted-average cost).
+    expect(report.stockPurchasesSen).toBe(29_440);
+    expect(report.cogsSen).toBe(29_440 - state.ingredients.kopi.stockValueSen);
+    expect(Math.abs(report.cogsSen - shots * 73.6)).toBeLessThanOrEqual(shots);
+    expect(report.ingredients?.find((l) => l.ingredientId === 'kopi')).toMatchObject({ purchased: 400, used: shots, closingStock: 400 - shots });
+    expect(state.ingredients.kopi.stock).toBe(400 - shots);
+    expect(report.closingInventorySen).toBe(state.ingredients.kopi.stockValueSen);
+  });
+
+  it('shares ingredients between products: latte and teh ais both use milk', () => {
+    const s = expectOk(purchaseStockBatch(newGame(), purchaseLines({ kopi: 200, teh: 200, susu: 20 }))).state;
+    const { report, state } = settle(s);
+    const milk = 2 * soldOf(report, 'latte') + soldOf(report, 'teh_ais');
+    expect(milk).toBeLessThanOrEqual(20);
+    expect(milk).toBeGreaterThanOrEqual(19); // runs out (a latte needs two)
+    expect(state.ingredients.susu.stock).toBe(20 - milk - (report.ingredients?.find((l) => l.ingredientId === 'susu')?.spoiled ?? 0));
+    expect(report.timeline.some((t) => /habis — susu segar tidak cukup/.test(t.text))).toBe(true);
+    expect(report.products.find((l) => l.productId === 'latte')?.unmetStockout).toBeGreaterThan(0);
   });
 
   it('keeps cash balance equal to opening cash plus every transaction', () => {
@@ -161,12 +190,14 @@ describe('daily settlement accounting', () => {
   });
 
   it('writes off spoiled perishables as an expense, not COGS', () => {
-    const s = expectOk(purchaseStock(newGame(), 'croissant', 200)).state;
+    const s = expectOk(purchaseStockBatch(newGame(), purchaseLines({ kopi: 200, pastri: 200 }))).state;
     const { report, state } = settle(s);
-    const line = report.products.find((l) => l.productId === 'croissant');
-    expect(line?.spoiledUnits).toBeGreaterThan(0);
+    const line = report.ingredients?.find((l) => l.ingredientId === 'pastri');
+    expect(line?.spoiled).toBe(Math.floor((200 - soldOf(report, 'croissant')) * 0.4));
+    expect(line?.used).toBe(soldOf(report, 'croissant'));
     expect(report.expenses.spoilageSen).toBe(line?.spoiledValueSen);
-    expect(state.products.croissant.stock).toBe(200 - (line?.sold ?? 0) - (line?.spoiledUnits ?? 0));
+    expect(report.ingredients?.find((l) => l.ingredientId === 'kopi')?.spoiled).toBe(0); // beans keep
+    expect(state.ingredients.pastri.stock).toBe(200 - (line?.used ?? 0) - (line?.spoiled ?? 0));
     expect(reconcileReport(report).ok).toBe(true);
   });
 
@@ -185,10 +216,10 @@ describe('daily settlement accounting', () => {
         expect(reports[i]?.openingCashSen).toBe(reports[i - 1]?.closingCashSen);
         expect(reports[i]?.openingInventorySen).toBe(reports[i - 1]?.closingInventorySen);
       }
-      for (const id of PRODUCT_IDS) {
-        expect(state.products[id].stock).toBeGreaterThanOrEqual(0);
-        expect(state.products[id].stockValueSen).toBeGreaterThanOrEqual(0);
-        expect(Number.isInteger(state.products[id].stockValueSen)).toBe(true);
+      for (const id of INGREDIENT_IDS) {
+        expect(state.ingredients[id].stock).toBeGreaterThanOrEqual(0);
+        expect(state.ingredients[id].stockValueSen).toBeGreaterThanOrEqual(0);
+        expect(Number.isInteger(state.ingredients[id].stockValueSen)).toBe(true);
       }
       expect(Number.isInteger(state.cashSen)).toBe(true);
     }
@@ -196,13 +227,14 @@ describe('daily settlement accounting', () => {
 
   it('never sells more than is in stock (no negative inventory)', () => {
     let s = newGame();
-    s = expectOk(purchaseStock(s, 'kopi_o', 3)).state;
-    s = expectOk(purchaseStock(s, 'latte', 2)).state;
+    s = expectOk(purchaseStock(s, 'kopi', 3)).state;
+    s = expectOk(purchaseStock(s, 'susu', 3)).state;
     const { report, state } = settle(s);
-    expect(soldOf(report, 'kopi_o')).toBeLessThanOrEqual(3);
-    expect(soldOf(report, 'latte')).toBeLessThanOrEqual(2);
-    expect(soldOf(report, 'americano')).toBe(0);
-    for (const id of PRODUCT_IDS) expect(state.products[id].stock).toBeGreaterThanOrEqual(0);
+    expect(soldOf(report, 'kopi_o') + 2 * soldOf(report, 'americano') + soldOf(report, 'latte')).toBeLessThanOrEqual(3);
+    expect(2 * soldOf(report, 'latte')).toBeLessThanOrEqual(3);
+    expect(soldOf(report, 'teh_ais')).toBe(0);
+    expect(soldOf(report, 'croissant')).toBe(0);
+    for (const id of INGREDIENT_IDS) expect(state.ingredients[id].stock).toBeGreaterThanOrEqual(0);
     expect(report.customers.lostStock).toBeGreaterThan(0);
   });
 
@@ -261,14 +293,14 @@ describe('one settlement per day', () => {
 
   it('blocks preparation actions after closing until the next day starts', () => {
     const { state } = settle(stockAll(newGame()));
-    expect(expectFail(purchaseStock(state, 'latte', 1)).error).toBe('WRONG_PHASE');
+    expect(expectFail(purchaseStock(state, 'susu', 1)).error).toBe('WRONG_PHASE');
     expect(expectFail(setPrice(state, 'latte', 800)).error).toBe('WRONG_PHASE');
     const next = expectOk(startNextDay(state, 1)).state;
     expect(next.day).toBe(2);
     expect(next.phase).toBe('prep');
     expect(next.dayStart.cashSen).toBe(state.cashSen);
     expect(expectFail(startNextDay(next, 1)).error).toBe('STALE_DAY');
-    expect(expectOk(purchaseStock(next, 'latte', 1)).state.products.latte.stock).toBeGreaterThan(0);
+    expect(expectOk(purchaseStock(next, 'susu', 1)).state.ingredients.susu.stock).toBeGreaterThan(0);
   });
 
   it('cannot advance before the day is processed', () => {
@@ -426,7 +458,8 @@ describe('upgrades', () => {
       ],
     };
     const r = expectOk(buyUpgrade(s, 'supplier_contract'));
-    expect(r.state.products.latte.unitCostSen).toBe(198);
+    expect(r.state.ingredients.susu.unitCostSen).toBe(63);
+    expect(r.state.ingredients.pastri.unitCostSen).toBe(180);
   });
 });
 

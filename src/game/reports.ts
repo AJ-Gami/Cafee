@@ -31,7 +31,10 @@ export function reconcileReport(report: DayReport): Reconciliation {
   const e = report.expenses;
   const lineRevenue = sumSen(report.products.map((l) => l.revenueSen));
   const lineCogs = sumSen(report.products.map((l) => l.cogsSen));
-  const lineSpoilage = sumSen(report.products.map((l) => l.spoiledValueSen));
+  // Reports from before ingredient stock recorded spoilage on the product lines.
+  const lineSpoilage = report.ingredients
+    ? sumSen(report.ingredients.map((l) => l.spoiledValueSen))
+    : sumSen(report.products.map((l) => l.spoiledValueSen ?? 0));
   const allTx = sumSen(report.transactions.map((t) => t.amountSen));
 
   const checks: ReconciliationCheck[] = [
@@ -59,6 +62,16 @@ export function reconcileReport(report: DayReport): Reconciliation {
       expectedSen: report.cogsSen,
       actualSen: lineCogs,
     },
+    ...(report.ingredients
+      ? [
+          {
+            id: 'cogs-ingredients',
+            label: 'Kos bahan yang digunakan = kos barang dijual',
+            expectedSen: report.cogsSen,
+            actualSen: sumSen(report.ingredients.map((l) => l.usedValueSen)),
+          },
+        ]
+      : []),
     {
       id: 'expenses',
       label: 'Jumlah perbelanjaan = gaji + sewa + utiliti + pemasaran + susut nilai + lain-lain',

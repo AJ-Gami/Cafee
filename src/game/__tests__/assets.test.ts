@@ -8,7 +8,7 @@ import { migrateSave } from '../save';
 import { upgradeViews } from '../selectors';
 import type { FixedAsset, GameState } from '../types';
 import { validateGameState } from '../validate';
-import { expectOk, newGame, playDays, settle, stockAll } from './helpers';
+import { expectOk, newGame, playDays, settle, stockAll, withProductStock } from './helpers';
 
 const richGame = (): GameState => ({ ...newGame(), cashSen: 2_000_000, dayStart: { ...newGame().dayStart, cashSen: 2_000_000 } });
 
@@ -121,7 +121,7 @@ describe('upgrades as fixed assets', () => {
 describe('saves with fixed assets', () => {
   /** Remove every field schema v5 added, giving the shape a v4 build wrote. */
   function asV4Save(game: GameState): unknown {
-    const g = structuredClone(game) as unknown as Record<string, unknown> & {
+    const g = withProductStock(game) as Record<string, unknown> & {
       dayStart: Record<string, unknown>;
       history: (Record<string, unknown> & { expenses: Record<string, unknown> })[];
     };

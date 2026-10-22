@@ -1,10 +1,10 @@
-import type { EventId, ProductId, UpgradeId } from '../types';
+import type { EventId, IngredientId, ProductId, UpgradeId } from '../types';
 
 export interface EventEffects {
   trafficMultiplier?: number;
   productDemand?: Partial<Record<ProductId, number>>;
   /** Supplier cost multiplier (basis points, 10000 = unchanged) for stock bought today. */
-  purchaseCostBps?: Partial<Record<ProductId, number>>;
+  purchaseCostBps?: Partial<Record<IngredientId, number>>;
   capacityMultiplier?: number;
   /** Hours (24h clock) during which the café cannot serve anyone. */
   closedHours?: number[];
@@ -93,7 +93,7 @@ export const EVENTS: Record<EventId, EventDef> = {
     weight: 6,
     minDay: 3,
     hour: 8,
-    effects: { purchaseCostBps: { kopi_o: 12_500, americano: 12_500, latte: 12_500 } },
+    effects: { purchaseCostBps: { kopi: 12_500 } },
   },
   competitor_promo: {
     id: 'competitor_promo',

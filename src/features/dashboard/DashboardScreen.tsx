@@ -16,7 +16,7 @@ import { remainingPrincipal } from '../../game/loans';
 import { formatRM } from '../../game/money';
 import { levelInfo } from '../../game/objectives';
 import { historySeries } from '../../game/reports';
-import { capacityView, currentInventoryValue, dayEstimate, lastReport, objectiveViews, productViews, visibleTodayEvent } from '../../game/selectors';
+import { capacityView, currentInventoryValue, dayEstimate, ingredientViews, lastReport, objectiveViews, visibleTodayEvent } from '../../game/selectors';
 import { ProfitMiniChart } from '../finance/LazyCharts';
 import { GoalCard } from '../operations/GoalCard';
 
@@ -24,7 +24,7 @@ export function DashboardScreen() {
   const { game } = useGame();
   const { go } = useNav();
   const report = lastReport(game);
-  const views = useMemo(() => productViews(game), [game]);
+  const views = useMemo(() => ingredientViews(game), [game]);
   const estimate = useMemo(() => dayEstimate(game), [game]);
   const cap = capacityView(game);
   const event = visibleTodayEvent(game);
@@ -35,7 +35,8 @@ export function DashboardScreen() {
   const outOfStock = views.filter((v) => v.stockLevel === 'out');
   const lowStock = views.filter((v) => v.stockLevel === 'low');
   const isNewPlayer = game.day === 1 && game.phase === 'prep' && game.history.length === 0;
-  const totalStock = views.reduce((n, v) => n + v.stock, 0);
+  const inUse = views.filter((v) => v.stockLevel !== 'off');
+  const enough = inUse.filter((v) => v.stockLevel === 'ok');
 
   return (
     <div className="space-y-4">
@@ -153,8 +154,10 @@ export function DashboardScreen() {
               <dd className="mt-0.5 text-lg font-semibold">{cap.perDay}</dd>
             </div>
             <div className="rounded-xl bg-cream-100 p-2.5">
-              <dt className="text-[11px] font-semibold uppercase text-espresso-600">Stok semua</dt>
-              <dd className="mt-0.5 text-lg font-semibold">{totalStock}</dd>
+              <dt className="text-[11px] font-semibold uppercase text-espresso-600">Bahan cukup</dt>
+              <dd className="mt-0.5 text-lg font-semibold">
+                {enough.length}/{inUse.length}
+              </dd>
             </div>
           </dl>
           {event ? (
@@ -176,14 +179,17 @@ export function DashboardScreen() {
       {game.phase === 'prep' && (outOfStock.length > 0 || lowStock.length > 0) && !isNewPlayer ? (
         <Notice
           tone={outOfStock.length > 0 ? 'bad' : 'warn'}
-          title={outOfStock.length > 0 ? 'Ada produk kehabisan stok' : 'Stok rendah'}
+          title={outOfStock.length > 0 ? 'Ada bahan kehabisan stok' : 'Stok bahan rendah'}
           action={
             <Button size="sm" variant="secondary" icon={<Package className="size-4" aria-hidden="true" />} onClick={() => go('menu', 'inventori')}>
               Ke inventori
             </Button>
           }
         >
-          {[...outOfStock.map((v) => `${v.name} (habis)`), ...lowStock.map((v) => `${v.name} (${v.stock} unit, anggaran ${v.estimatedDemand})`)].join(', ')}
+          {[
+            ...outOfStock.map((v) => `${v.name} (habis)`),
+            ...lowStock.map((v) => `${v.name} (${v.stock} ${v.unitLabel}, perlu ~${v.estimatedNeed})`),
+          ].join(', ')}
         </Notice>
       ) : null}
       {game.phase === 'prep' && estimate.footfall > cap.perDay ? (

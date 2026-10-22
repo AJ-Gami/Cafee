@@ -38,7 +38,8 @@ for (const width of [360, 390, 768]) {
 test('menu shows prices, unit costs, margins and availability', async ({ page }) => {
   await gotoApp(page, '#/menu/harga');
   await expect(page.getByRole('heading', { name: 'Kopi O' })).toBeVisible();
-  await expect(page.getByText('Kos seunit').first()).toBeVisible();
+  await expect(page.getByText('Kos bahan').first()).toBeVisible();
+  await expect(page.getByText('Resipi: 1 sukatan biji kopi + 2 sukatan susu segar')).toBeVisible();
   await expect(page.getByText('Margin %').first()).toBeVisible();
   await page.getByRole('switch', { name: 'Croissant dalam menu' }).click();
   await expect(toast(page)).toContainText('Croissant dikeluarkan daripada menu');

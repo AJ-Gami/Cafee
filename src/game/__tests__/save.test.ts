@@ -28,7 +28,7 @@ import {
   type StorageLike,
 } from '../save';
 import { validateGameState } from '../validate';
-import { expectOk, newGame, playDays, settle, stockAll } from './helpers';
+import { expectOk, newGame, playDays, settle, stockAll, viaProductStock, withProductStock } from './helpers';
 
 describe('save/load round trip', () => {
   it('restores an identical game state', () => {
@@ -129,7 +129,9 @@ describe('invalid save recovery', () => {
     const cases: unknown[] = [
       { ...game, cashSen: 12.5 },
       { ...game, reputation: 150 },
-      { ...game, products: { ...game.products, latte: { ...game.products.latte, stock: -1 } } },
+      { ...game, ingredients: { ...game.ingredients, susu: { ...game.ingredients.susu, stock: -1 } } },
+      { ...game, ingredients: { ...game.ingredients, susu: { ...game.ingredients.susu, stockValueSen: 500 } } }, // value without units
+      { ...game, ingredients: { ...game.ingredients, teh: undefined } },
       { ...game, products: { ...game.products, latte: undefined } },
       { ...game, staff: [] },
       { ...game, upgrades: ['rocket_ship'] },
@@ -282,7 +284,11 @@ describe('schema migration', () => {
     expect(g.phase).toBe('prep');
     expect(g.lastSettledDay).toBe(5);
     expect(g.reputation).toBe(61.3);
-    expect(g.products.latte).toMatchObject({ priceSen: 750, unitCostSen: 220, stock: 12, stockValueSen: 2_640 });
+    expect(g.products.latte).toEqual({ id: 'latte', priceSen: 750, enabled: true });
+    // 12 lattes valued at RM2.20 each become their recipe: 12 coffee and 24 milk measures, value kept.
+    expect(g.ingredients.kopi).toMatchObject({ stock: 12, stockValueSen: 960 });
+    expect(g.ingredients.susu).toMatchObject({ stock: 24, stockValueSen: 1_680 });
+    expect(g.dayStart.inventorySen).toBe(2_640);
     expect(g.products.croissant.enabled).toBe(false);
     expect(g.staff.map((s) => s.wageSen)).toEqual([9_000, 7_050]);
     expect(g.upgrades).toEqual(['signage']);
@@ -386,9 +392,9 @@ describe('comparing two copies of a game', () => {
 });
 
 describe('comparing copies written by different builds', () => {
-  /** The same game as a v2 build stored it, after migration: equal content, different key order. */
+  /** The same game as a v2 build stored it, after migration: equal content to viaProductStock, different key order. */
   function viaV2(game: GameState): GameState {
-    const g = structuredClone(game) as unknown as Record<string, unknown> & {
+    const g = withProductStock(game) as Record<string, unknown> & {
       dayStart: Record<string, unknown>;
       stats: Record<string, unknown>;
       history: (Record<string, unknown> & { expenses: Record<string, unknown> })[];
@@ -407,7 +413,7 @@ describe('comparing copies written by different builds', () => {
   }
 
   it('compares content, not the order fields were written in', () => {
-    const played = playDays(newGame(), 3).state;
+    const played = viaProductStock(playDays(newGame(), 3).state);
     const old = viaV2(played);
     expect(JSON.stringify(old.history[0]) === JSON.stringify(played.history[0])).toBe(false);
     expect(isEarlierStateOf(old, played)).toBe(true);

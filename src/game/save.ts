@@ -18,21 +18,27 @@
  *   v4: adds weekend and public-holiday sales goals — `game.goal`,
  *       per-report `goal`, `stats.goalsMet`, `stats.holidayGoalsMet` and
  *       `stats.perfectWeekends`, and the goal objectives.
- *   v5 (current): upgrades become depreciated fixed assets — `game.assets`,
+ *   v5: upgrades become depreciated fixed assets — `game.assets`,
  *       `dayStart.assetsSen`, and per-report `expenses.depreciationSen`,
  *       `openingAssetsSen` and `closingAssetsSen`.
+ *   v6 (current): stock is held per ingredient — `game.ingredients` replaces
+ *       each product's `unitCostSen`, `stock` and `stockValueSen`; stock
+ *       purchases name an `ingredientId`; reports gain `ingredients` lines
+ *       (null on older reports, whose product lines keep their spoilage and
+ *       closing stock).
  */
-import { DEFAULT_CAFE_NAME, MAX_PRICE_SEN, MAX_STOCK_PER_PRODUCT, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
+import { DEFAULT_CAFE_NAME, MAX_PRICE_SEN, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
+import { INGREDIENTS } from './data/ingredients';
 import { PRODUCTS } from './data/products';
 import { UPGRADES } from './data/upgrades';
 import { PROMOTIONS } from './data/promotions';
 import { newAsset } from './assets';
-import { createNewGame, hiringLabel, sanitizeCafeName, wagesLabelPrefix } from './engine';
-import { inventoryValue } from './economy';
+import { createInitialIngredients, createNewGame, hiringLabel, sanitizeCafeName, wagesLabelPrefix } from './engine';
+import { recipeOf } from './economy';
 import { dayGoalFor } from './goals';
-import { applyBps, sumSen } from './money';
-import type { DayReport, EventId, GameState, ProductId, StaffMember, UpgradeId } from './types';
-import { PRODUCT_IDS } from './types';
+import { applyBps, mulDivRound, sumSen } from './money';
+import type { DayReport, EventId, GameState, ProductId, ProductState, StaffMember, UpgradeId } from './types';
+import { INGREDIENT_IDS, PRODUCT_IDS } from './types';
 import { validateGameState } from './validate';
 
 export const SAVE_KEY = 'rlt-cafe-empire/save';
@@ -126,19 +132,35 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
-/** v1 prototype save -> v2 game state (built on today's new-game defaults, so later migrations are no-ops on it). */
-function migrateV1toV2(v1: Obj): GameState {
+/** A product as saves up to v5 stored it, holding its own stock. */
+type ProductWithStock = ProductState & { unitCostSen: number; stock: number; stockValueSen: number };
+
+/** The prototype's storage limit per product. */
+const V1_MAX_STOCK = 999;
+
+/** Cost of one unit of a product at the ingredients' starting prices. */
+function baseRecipeCost(id: ProductId): number {
+  return sumSen(recipeOf(id).map(([ingredient, qty]) => INGREDIENTS[ingredient].baseCostSen * qty));
+}
+
+/**
+ * v1 prototype save -> v2 game state, with stock held per product as v2 did (built on today's
+ * new-game defaults, so later migrations only add what v2 lacked).
+ */
+function migrateV1toV2(v1: Obj): Obj {
   const seed = clampInt(v1.seed, 0, 0xffffffff, 1);
   const base = createNewGame(seed, typeof v1.cafeName === 'string' ? (sanitizeCafeName(v1.cafeName) ?? undefined) : undefined);
   const day = clampInt(v1.day, 1, 100_000, 1);
 
-  const products = { ...base.products };
+  const products = Object.fromEntries(
+    PRODUCT_IDS.map((id) => [id, { ...base.products[id], unitCostSen: baseRecipeCost(id), stock: 0, stockValueSen: 0 }]),
+  ) as Record<ProductId, ProductWithStock>;
   if (Array.isArray(v1.products)) {
     for (const raw of v1.products) {
       if (!isObj(raw) || !(PRODUCT_IDS as readonly unknown[]).includes(raw.id)) continue;
       const id = raw.id as ProductId;
       const unitCostSen = clampInt(ringgitToSen(raw.cost, products[id].unitCostSen), 0, MAX_PRICE_SEN, products[id].unitCostSen);
-      const stock = clampInt(raw.stock, 0, MAX_STOCK_PER_PRODUCT, 0);
+      const stock = clampInt(raw.stock, 0, V1_MAX_STOCK, 0);
       products[id] = {
         ...products[id],
         priceSen: clampInt(ringgitToSen(raw.price, products[id].priceSen), MIN_PRICE_SEN, MAX_PRICE_SEN, products[id].priceSen),
@@ -183,7 +205,13 @@ function migrateV1toV2(v1: Obj): GameState {
     staff,
     upgrades,
     lastSettledDay: day - 1,
-    dayStart: { cashSen, inventorySen: inventoryValue(products), debtSen: 0, assetsSen: 0, staffNames: staff.map((s) => s.name) },
+    dayStart: {
+      cashSen,
+      inventorySen: sumSen(PRODUCT_IDS.map((id) => products[id].stockValueSen)),
+      debtSen: 0,
+      assetsSen: 0,
+      staffNames: staff.map((s) => s.name),
+    },
     stats: { ...base.stats, daysCompleted: day - 1 },
   };
 }
@@ -278,6 +306,53 @@ function migrateV4toV5(v4: unknown): unknown {
   };
 }
 
+/**
+ * v5 -> v6: stock moves from products to the ingredients their recipes use. Each product's units
+ * become recipe units of its ingredients carrying the same total value (split by the ingredients'
+ * starting prices, the remainder to the last), so the inventory value and every report stay
+ * unchanged. Supplier prices restart from the ingredient list, less the supplier contract's
+ * discount if owned. Past reports keep their per-product stock lines.
+ */
+function migrateV5toV6(v5: unknown): unknown {
+  if (!isObj(v5) || !isObj(v5.products)) return v5;
+  const oldProducts = v5.products;
+  const discount = Array.isArray(v5.upgrades) && v5.upgrades.includes('supplier_contract') ? (UPGRADES.supplier_contract.effects.supplierDiscountBps ?? 0) : 0;
+  const ingredients = createInitialIngredients();
+  for (const id of INGREDIENT_IDS) {
+    const cost = ingredients[id].unitCostSen;
+    ingredients[id] = { ...ingredients[id], unitCostSen: cost - applyBps(cost, discount) };
+  }
+  const products: Record<string, unknown> = {};
+  for (const id of PRODUCT_IDS) {
+    const p = oldProducts[id];
+    if (!isObj(p)) {
+      products[id] = p;
+      continue;
+    }
+    products[id] = { id: p.id, priceSen: p.priceSen, enabled: p.enabled };
+    const stock = typeof p.stock === 'number' && Number.isSafeInteger(p.stock) && p.stock > 0 ? p.stock : 0;
+    const valueSen = typeof p.stockValueSen === 'number' && Number.isSafeInteger(p.stockValueSen) && p.stockValueSen > 0 ? p.stockValueSen : 0;
+    if (stock === 0) continue;
+    const recipe = recipeOf(id);
+    const weights = recipe.map(([ingredient, qty]) => INGREDIENTS[ingredient].baseCostSen * qty);
+    const totalWeight = sumSen(weights);
+    let allocated = 0;
+    recipe.forEach(([ingredient, qty], i) => {
+      const share = i === recipe.length - 1 ? valueSen - allocated : mulDivRound(valueSen, weights[i] ?? 0, totalWeight);
+      allocated += share;
+      const item = ingredients[ingredient];
+      ingredients[ingredient] = { ...item, stock: item.stock + stock * qty, stockValueSen: item.stockValueSen + share };
+    });
+  }
+  return {
+    ...v5,
+    schemaVersion: 6,
+    products,
+    ingredients,
+    history: Array.isArray(v5.history) ? v5.history.map((r: unknown) => (isObj(r) ? { ...r, ingredients: null } : r)) : v5.history,
+  };
+}
+
 export type MigrationResult =
   | { ok: true; game: unknown; fromVersion: number }
   /** `newer`: written by a newer version of the game, so this build must not touch it. */
@@ -319,6 +394,10 @@ export function migrateSave(raw: unknown): MigrationResult {
   if (version === 4) {
     game = migrateV4toV5(game);
     version = 5;
+  }
+  if (version === 5) {
+    game = migrateV5toV6(game);
+    version = 6;
   }
   if (version !== SAVE_SCHEMA_VERSION) return { ok: false, error: 'Migrasi simpanan tidak lengkap.' };
   return { ok: true, game, fromVersion };

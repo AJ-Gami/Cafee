@@ -6,16 +6,31 @@ import { Button } from '../../components/Button';
 import { Card, CardTitle } from '../../components/Card';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Money } from '../../components/Money';
+import { IngredientIcon } from '../../components/IngredientIcon';
 import { ProductIcon } from '../../components/ProductIcon';
 import { BULK_DISCOUNTS } from '../../game/constants';
+import { INGREDIENTS } from '../../game/data/ingredients';
 import { PRODUCTS } from '../../game/data/products';
 import { quotePurchase } from '../../game/economy';
-import { currentInventoryValue, productViews, restockPlan, type ProductView, type StockLevel } from '../../game/selectors';
+import {
+  currentInventoryValue,
+  ingredientViews,
+  productViews,
+  restockPlan,
+  type IngredientView,
+  type StockLevel,
+} from '../../game/selectors';
 
 const LEVEL: Record<StockLevel, { label: string; tone: Tone }> = {
   out: { label: 'Habis', tone: 'bad' },
   low: { label: 'Stok rendah', tone: 'warn' },
   ok: { label: 'Mencukupi', tone: 'good' },
+  off: { label: 'Tidak digunakan', tone: 'neutral' },
+};
+
+const PRODUCT_LEVEL: Record<StockLevel, { label: string; tone: Tone }> = {
+  ...LEVEL,
+  low: { label: 'Mungkin tak cukup', tone: 'warn' },
   off: { label: 'Tiada dalam menu', tone: 'neutral' },
 };
 
@@ -23,7 +38,8 @@ const QUICK_QTY = [10, 25, 50, 100] as const;
 
 export function InventoryPanel({ locked }: { locked: boolean }) {
   const { game, dispatch } = useGame();
-  const views = useMemo(() => productViews(game), [game]);
+  const views = useMemo(() => ingredientViews(game), [game]);
+  const products = useMemo(() => productViews(game), [game]);
   const plan = useMemo(() => restockPlan(game), [game]);
   const [restockOpen, setRestockOpen] = useState(false);
   const canAffordPlan = plan.totalSen <= game.cashSen;
@@ -47,7 +63,9 @@ export function InventoryPanel({ locked }: { locked: boolean }) {
           </div>
         </dl>
         <p className="mt-3 text-sm text-espresso-600">
-          Belian stok mengurangkan tunai serta-merta. Kos hanya diiktiraf sebagai kos barang dijual apabila item terjual. Diskaun pukal:{' '}
+          Kafe menyimpan bahan, bukan minuman siap: setiap produk dibuat daripada bahan mengikut resipinya, dan bahan yang dikongsi (susu, biji
+          kopi) habis lebih cepat. Belian stok mengurangkan tunai serta-merta; kos bahan hanya menjadi kos barang dijual apabila produk terjual.
+          Diskaun pukal:{' '}
           {BULK_DISCOUNTS.map((t) => `${t.minQty}+ unit ${t.bps / 100}%`)
             .reverse()
             .join(', ')}
@@ -63,6 +81,30 @@ export function InventoryPanel({ locked }: { locked: boolean }) {
         >
           {plan.items.length === 0 ? 'Stok sudah ikut anggaran' : <>Isi semula ikut anggaran (<Money sen={plan.totalSen} />)</>}
         </Button>
+      </Card>
+
+      <Card>
+        <CardTitle title="Hidangan boleh dibuat" subtitle="Daripada bahan sekarang, jika produk lain tidak berkongsi bahan." />
+        <ul className="divide-y divide-espresso-800/[0.07]">
+          {products.map((p) => (
+            <li key={p.id} className="flex items-center gap-3 py-2">
+              <ProductIcon id={p.id} size="sm" />
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold">{p.name}</span>
+                <span className="block text-xs text-espresso-600">
+                  {p.recipe.map((r) => `${r.qty} ${r.name.toLowerCase()}`).join(' + ')}
+                  {p.enabled ? ` · anggaran ~${p.estimatedDemand}` : ''}
+                </span>
+              </span>
+              <span className="text-right">
+                <span className="tabular block font-semibold">
+                  {p.servings} {PRODUCTS[p.id].unitLabel}
+                </span>
+                <Badge tone={PRODUCT_LEVEL[p.stockLevel].tone}>{PRODUCT_LEVEL[p.stockLevel].label}</Badge>
+              </span>
+            </li>
+          ))}
+        </ul>
       </Card>
 
       {views.map((v) => (
@@ -84,11 +126,11 @@ export function InventoryPanel({ locked }: { locked: boolean }) {
         <p>Beli stok untuk memenuhi anggaran permintaan hari ini:</p>
         <ul className="mt-2 space-y-1">
           {plan.items.map((i) => (
-            <li key={i.productId} className="flex justify-between gap-2">
+            <li key={i.ingredientId} className="flex justify-between gap-2">
               <span>
-                {PRODUCTS[i.productId].name} × {i.quantity}
+                {INGREDIENTS[i.ingredientId].name} × {i.quantity}
               </span>
-              <Money sen={quotePurchase(game, i.productId, i.quantity).totalSen} />
+              <Money sen={quotePurchase(game, i.ingredientId, i.quantity).totalSen} />
             </li>
           ))}
         </ul>
@@ -98,7 +140,7 @@ export function InventoryPanel({ locked }: { locked: boolean }) {
         </p>
         {!canAffordPlan ? (
           <p className="mt-2 text-sm font-semibold text-rust-700">
-            Tunai anda (<Money sen={game.cashSen} />) tidak mencukupi. Beli produk satu demi satu.
+            Tunai anda (<Money sen={game.cashSen} />) tidak mencukupi. Beli bahan satu demi satu.
           </p>
         ) : null}
       </ConfirmDialog>
@@ -106,10 +148,9 @@ export function InventoryPanel({ locked }: { locked: boolean }) {
   );
 }
 
-function PurchaseCard({ view, locked }: { view: ProductView; locked: boolean }) {
+function PurchaseCard({ view, locked }: { view: IngredientView; locked: boolean }) {
   const { game, dispatch } = useGame();
   const qtyId = useId();
-  const def = PRODUCTS[view.id];
   const [qty, setQty] = useState<number>(Math.max(10, view.suggestedPurchase || 10));
   const max = view.maxPurchase;
   const safeQty = Math.min(Math.max(1, qty || 1), Math.max(1, max));
@@ -121,14 +162,17 @@ function PurchaseCard({ view, locked }: { view: ProductView; locked: boolean }) 
   return (
     <Card>
       <div className="flex items-start gap-3">
-        <ProductIcon id={view.id} />
+        <IngredientIcon id={view.id} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-display text-lg leading-tight">{view.name}</h2>
             <Badge tone={level.tone}>{level.label}</Badge>
           </div>
           <p className="mt-0.5 text-sm text-espresso-600">
-            Anggaran permintaan hari ini: <span className="font-semibold text-espresso-800">~{view.estimatedDemand}</span> {def.unitLabel}
+            Keperluan anggaran hari ini: <span className="font-semibold text-espresso-800">~{view.estimatedNeed}</span> {view.unitLabel}
+          </p>
+          <p className="mt-0.5 text-xs text-espresso-600">
+            Untuk {view.usedBy.map((u) => `${u.name} (${u.qty})`).join(', ')}
           </p>
         </div>
       </div>
@@ -150,9 +194,9 @@ function PurchaseCard({ view, locked }: { view: ProductView; locked: boolean }) 
         </div>
       </dl>
 
-      {def.spoilageRate > 0 ? (
+      {view.spoilageRate > 0 ? (
         <p className="mt-2 text-xs text-honey-700">
-          Mudah rosak: kira-kira {Math.round(def.spoilageRate * 100)}% stok yang tidak terjual dibuang setiap malam.
+          Mudah rosak: kira-kira {Math.round(view.spoilageRate * 100)}% baki stok dibuang setiap malam.
         </p>
       ) : null}
 
@@ -229,7 +273,7 @@ function PurchaseCard({ view, locked }: { view: ProductView; locked: boolean }) 
       </div>
 
       {storageFull ? (
-        <p className="mt-2 text-sm font-semibold text-honey-700">Stor penuh untuk produk ini.</p>
+        <p className="mt-2 text-sm font-semibold text-honey-700">Stor penuh untuk bahan ini.</p>
       ) : !affordable && !locked ? (
         <p className="mt-2 text-sm font-semibold text-rust-700" role="status">
           Tunai tidak mencukupi — perlu <Money sen={quote.totalSen} />, baki <Money sen={game.cashSen} />.
@@ -240,10 +284,10 @@ function PurchaseCard({ view, locked }: { view: ProductView; locked: boolean }) 
         className="mt-3"
         block
         disabled={locked || storageFull || !affordable || safeQty < 1}
-        onClick={() => dispatch({ type: 'PURCHASE', productId: view.id, quantity: safeQty })}
+        onClick={() => dispatch({ type: 'PURCHASE', ingredientId: view.id, quantity: safeQty })}
         icon={<ShoppingCart className="size-4" aria-hidden="true" />}
       >
-        Beli {safeQty} {def.unitLabel}
+        Beli {safeQty} {view.unitLabel}
       </Button>
     </Card>
   );

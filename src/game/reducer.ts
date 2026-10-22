@@ -24,6 +24,7 @@ import type {
   EngineErrorCode,
   EngineResult,
   GameState,
+  IngredientId,
   LoanOfferId,
   ObjectiveId,
   ProductId,
@@ -32,8 +33,8 @@ import type {
 } from './types';
 
 export type GameAction =
-  | { type: 'PURCHASE'; productId: ProductId; quantity: number }
-  | { type: 'PURCHASE_BATCH'; items: { productId: ProductId; quantity: number }[] }
+  | { type: 'PURCHASE'; ingredientId: IngredientId; quantity: number }
+  | { type: 'PURCHASE_BATCH'; items: { ingredientId: IngredientId; quantity: number }[] }
   | { type: 'SET_PRICE'; productId: ProductId; priceSen: number }
   | { type: 'SET_PRODUCT_ENABLED'; productId: ProductId; enabled: boolean }
   | { type: 'SET_PROMOTION'; promotionId: PromotionId }
@@ -93,7 +94,7 @@ export function gameReducer(store: GameStore, action: GameAction): GameStore {
   const g = store.game;
   switch (action.type) {
     case 'PURCHASE':
-      return apply(store, purchaseStock(g, action.productId, action.quantity));
+      return apply(store, purchaseStock(g, action.ingredientId, action.quantity));
     case 'PURCHASE_BATCH':
       return apply(store, purchaseStockBatch(g, action.items));
     case 'SET_PRICE':

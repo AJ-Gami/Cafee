@@ -8,7 +8,7 @@ import {
   GOAL_MIN_BASE_DAYS,
   GOAL_MIN_TARGET_SEN,
   MAX_PRICE_SEN,
-  MAX_STOCK_PER_PRODUCT,
+  MAX_STOCK_PER_INGREDIENT,
   MIN_PRICE_SEN,
   SAVE_SCHEMA_VERSION,
 } from './constants';
@@ -21,7 +21,7 @@ import { totalBookValue } from './assets';
 import { goalKindFor } from './goals';
 import { installment, remainingPrincipal } from './loans';
 import type { ActiveLoan, EventId, FixedAsset, GameState } from './types';
-import { PRODUCT_IDS } from './types';
+import { INGREDIENT_IDS, PRODUCT_IDS } from './types';
 
 type Obj = Record<string, unknown>;
 
@@ -96,6 +96,7 @@ function validateTransaction(v: Validator, value: unknown, path: string): void {
   v.int(tx.amountSen, `${path}.amountSen`);
   v.str(tx.label, `${path}.label`);
   if (tx.productId !== undefined) v.oneOf(tx.productId, PRODUCT_IDS, `${path}.productId`);
+  if (tx.ingredientId !== undefined) v.oneOf(tx.ingredientId, INGREDIENT_IDS, `${path}.ingredientId`);
   if (tx.quantity !== undefined) v.int(tx.quantity, `${path}.quantity`, 0);
 }
 
@@ -168,10 +169,24 @@ function validateReport(v: Validator, value: unknown, path: string): void {
     const line = v.obj(l, `${path}.products[${i}]`);
     if (!line) return;
     v.oneOf(line.productId, PRODUCT_IDS, `${path}.products[${i}].productId`);
-    for (const key of ['demanded', 'sold', 'unmetStockout', 'revenueSen', 'cogsSen', 'spoiledUnits', 'spoiledValueSen', 'closingStock', 'salePriceSen']) {
+    for (const key of ['demanded', 'sold', 'unmetStockout', 'revenueSen', 'cogsSen', 'salePriceSen']) {
       v.int(line[key], `${path}.products[${i}].${key}`, 0);
     }
+    // Stock was kept per product before ingredient stock; those reports keep it on the line.
+    if (r.ingredients === null) {
+      for (const key of ['spoiledUnits', 'spoiledValueSen', 'closingStock']) v.int(line[key], `${path}.products[${i}].${key}`, 0);
+    }
   });
+  if (r.ingredients !== null) {
+    v.arr(r.ingredients, `${path}.ingredients`)?.forEach((l, i) => {
+      const line = v.obj(l, `${path}.ingredients[${i}]`);
+      if (!line) return;
+      v.oneOf(line.ingredientId, INGREDIENT_IDS, `${path}.ingredients[${i}].ingredientId`);
+      for (const key of ['purchased', 'used', 'spoiled', 'closingStock', 'usedValueSen', 'spoiledValueSen']) {
+        v.int(line[key], `${path}.ingredients[${i}].${key}`, 0);
+      }
+    });
+  }
   const hourly = v.arr(r.hourly, `${path}.hourly`);
   hourly?.forEach((h, i) => {
     const line = v.obj(h, `${path}.hourly[${i}]`);
@@ -309,11 +324,20 @@ export function validateGameState(value: unknown): ValidationResult {
       if (!p) continue;
       v.check(p.id === id, `game.products.${id}.id: tidak sepadan`);
       v.int(p.priceSen, `game.products.${id}.priceSen`, MIN_PRICE_SEN, MAX_PRICE_SEN);
-      v.int(p.unitCostSen, `game.products.${id}.unitCostSen`, 0, MAX_PRICE_SEN);
-      v.int(p.stock, `game.products.${id}.stock`, 0, MAX_STOCK_PER_PRODUCT);
-      v.int(p.stockValueSen, `game.products.${id}.stockValueSen`, 0);
       v.bool(p.enabled, `game.products.${id}.enabled`);
-      v.check(p.stock !== 0 || p.stockValueSen === 0, `game.products.${id}: nilai stok tanpa unit`);
+    }
+  }
+
+  const ingredients = v.obj(s.ingredients, 'game.ingredients');
+  if (ingredients) {
+    for (const id of INGREDIENT_IDS) {
+      const item = v.obj(ingredients[id], `game.ingredients.${id}`);
+      if (!item) continue;
+      v.check(item.id === id, `game.ingredients.${id}.id: tidak sepadan`);
+      v.int(item.unitCostSen, `game.ingredients.${id}.unitCostSen`, 0, MAX_PRICE_SEN);
+      v.int(item.stock, `game.ingredients.${id}.stock`, 0, MAX_STOCK_PER_INGREDIENT);
+      v.int(item.stockValueSen, `game.ingredients.${id}.stockValueSen`, 0);
+      v.check(item.stock !== 0 || item.stockValueSen === 0, `game.ingredients.${id}: nilai stok tanpa unit`);
     }
   }
 

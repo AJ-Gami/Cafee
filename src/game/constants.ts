@@ -3,7 +3,7 @@
  * numbers, not real Malaysian market data.
  */
 
-export const SAVE_SCHEMA_VERSION = 5;
+export const SAVE_SCHEMA_VERSION = 6;
 
 export const STARTING_CASH_SEN = 500_000; // RM5,000
 export const STARTING_REPUTATION = 50;
@@ -41,7 +41,8 @@ export const MIN_PRICE_SEN = 50;
 export const MAX_PRICE_SEN = 5_000;
 export const PRICE_STEP_SEN = 10;
 
-export const MAX_STOCK_PER_PRODUCT = 999;
+/** Storage limit per ingredient (a product-era save converts to at most 3,996 coffee measures). */
+export const MAX_STOCK_PER_INGREDIENT = 5_000;
 export const MAX_PURCHASE_QTY = 500;
 
 /** Bulk purchase discounts, highest threshold first. */
@@ -76,4 +77,3 @@ export const BANKRUPTCY_NEGATIVE_DAYS = 3;
 /** Fraction of potential customers that must be served to keep reputation steady. */
 export const SERVICE_RATE_TARGET = 0.85;
 
-export const LOW_STOCK_RATIO = 0.6;

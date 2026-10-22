@@ -1,11 +1,13 @@
-import { BadgeCheck, CircleAlert, Clock, Receipt, Scale, Sparkles, Target, Users } from 'lucide-react';
+import { BadgeCheck, CircleAlert, Clock, Package, Receipt, Scale, Sparkles, Target, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Badge, type Tone } from '../../components/Badge';
 import { Card, CardTitle, Row } from '../../components/Card';
+import { IngredientIcon } from '../../components/IngredientIcon';
 import { Money } from '../../components/Money';
 import { ProductIcon } from '../../components/ProductIcon';
 import { ProgressBar } from '../../components/ProgressBar';
 import { EVENTS } from '../../game/data/events';
+import { INGREDIENTS } from '../../game/data/ingredients';
 import { PRODUCTS } from '../../game/data/products';
 import { PROMOTIONS } from '../../game/data/promotions';
 import { formatHour, percentPoints } from '../../game/demand';
@@ -179,13 +181,14 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
                   <Money sen={l.revenueSen} className="font-semibold" />
                 </div>
                 <p className="text-sm text-espresso-600">
-                  {l.sold} terjual @ <Money sen={l.salePriceSen} /> · kos <Money sen={l.cogsSen} /> · baki {l.closingStock}
+                  {l.sold} terjual @ <Money sen={l.salePriceSen} /> · {report.ingredients ? 'kos bahan' : 'kos'} <Money sen={l.cogsSen} />
+                  {l.closingStock !== undefined ? ` · baki ${l.closingStock}` : ''}
                 </p>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {l.unmetStockout > 0 ? <Badge tone="bad">{l.unmetStockout} permintaan tak dipenuhi</Badge> : null}
-                  {l.spoiledUnits > 0 ? (
+                  {l.spoiledUnits ? (
                     <Badge tone="warn">
-                      {l.spoiledUnits} rosak (<Money sen={l.spoiledValueSen} />)
+                      {l.spoiledUnits} rosak (<Money sen={l.spoiledValueSen ?? 0} />)
                     </Badge>
                   ) : null}
                 </div>
@@ -194,6 +197,37 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
           ))}
         </ul>
       </Card>
+
+      {report.ingredients ? (
+        <Card>
+          <CardTitle title="Bahan" subtitle="Pergerakan stok bahan hari ini" icon={<Package className="size-5" />} />
+          <ul className="space-y-3">
+            {report.ingredients.map((l) => (
+              <li key={l.ingredientId} className="flex items-start gap-3">
+                <IngredientIcon id={l.ingredientId} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="font-semibold">{INGREDIENTS[l.ingredientId].name}</p>
+                    <p className="tabular text-sm font-semibold">
+                      baki {l.closingStock} {INGREDIENTS[l.ingredientId].unitLabel}
+                    </p>
+                  </div>
+                  <p className="text-sm text-espresso-600">
+                    dibeli {l.purchased} · digunakan {l.used} (<Money sen={l.usedValueSen} />)
+                  </p>
+                  {l.spoiled > 0 ? (
+                    <div className="mt-1">
+                      <Badge tone="warn">
+                        {l.spoiled} rosak (<Money sen={l.spoiledValueSen} />)
+                      </Badge>
+                    </div>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
 
       {report.objectivesCompleted.length > 0 ? (
         <Card>
