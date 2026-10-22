@@ -15,18 +15,22 @@
  *       `stats.loansRepaid`, loan transaction types, and per-report
  *       `loanProceedsSen`, `loanPrincipalRepaidSen`, `openingDebtSen`,
  *       `closingDebtSen` and `expenses.interestSen`.
- *   v4 (current): adds weekend and public-holiday sales goals — `game.goal`,
+ *   v4: adds weekend and public-holiday sales goals — `game.goal`,
  *       per-report `goal`, `stats.goalsMet`, `stats.holidayGoalsMet` and
  *       `stats.perfectWeekends`, and the goal objectives.
+ *   v5 (current): upgrades become depreciated fixed assets — `game.assets`,
+ *       `dayStart.assetsSen`, and per-report `expenses.depreciationSen`,
+ *       `openingAssetsSen` and `closingAssetsSen`.
  */
 import { DEFAULT_CAFE_NAME, MAX_PRICE_SEN, MAX_STOCK_PER_PRODUCT, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
 import { PRODUCTS } from './data/products';
 import { UPGRADES } from './data/upgrades';
 import { PROMOTIONS } from './data/promotions';
+import { newAsset } from './assets';
 import { createNewGame, hiringLabel, sanitizeCafeName, wagesLabelPrefix } from './engine';
 import { inventoryValue } from './economy';
 import { dayGoalFor } from './goals';
-import { applyBps } from './money';
+import { applyBps, sumSen } from './money';
 import type { DayReport, EventId, GameState, ProductId, StaffMember, UpgradeId } from './types';
 import { PRODUCT_IDS } from './types';
 import { validateGameState } from './validate';
@@ -179,7 +183,7 @@ function migrateV1toV2(v1: Obj): GameState {
     staff,
     upgrades,
     lastSettledDay: day - 1,
-    dayStart: { cashSen, inventorySen: inventoryValue(products), debtSen: 0, staffNames: staff.map((s) => s.name) },
+    dayStart: { cashSen, inventorySen: inventoryValue(products), debtSen: 0, assetsSen: 0, staffNames: staff.map((s) => s.name) },
     stats: { ...base.stats, daysCompleted: day - 1 },
   };
 }
@@ -232,6 +236,48 @@ function migrateV3toV4(v3: unknown): unknown {
   };
 }
 
+/**
+ * v4 -> v5: upgrades were never expensed, so each becomes an asset at its full cost with no
+ * depreciation taken yet; depreciation starts at the next close. Its purchase day is found from
+ * its transaction where one is still kept (it only decides whether the asset was already owned
+ * when today started); past reports had no assets and no depreciation.
+ */
+function migrateV4toV5(v4: unknown): unknown {
+  if (!isObj(v4)) return v4;
+  const day = typeof v4.day === 'number' ? v4.day : 1;
+  const lastSettled = typeof v4.lastSettledDay === 'number' ? v4.lastSettledDay : 0;
+  const history = Array.isArray(v4.history) ? v4.history : null;
+  const boughtOn = (id: UpgradeId): number => {
+    const label = `Naik taraf: ${UPGRADES[id].name}`;
+    const isPurchase = (t: unknown): boolean => isObj(t) && t.type === 'upgrade' && t.label === label;
+    if (Array.isArray(v4.dayTransactions) && v4.dayTransactions.some(isPurchase)) return day;
+    const report = history?.find((r: unknown) => isObj(r) && Array.isArray(r.transactions) && r.transactions.some(isPurchase));
+    return isObj(report) && typeof report.day === 'number' ? report.day : lastSettled;
+  };
+  const upgrades = Array.isArray(v4.upgrades) ? v4.upgrades.filter((u): u is UpgradeId => typeof u === 'string' && u in UPGRADES) : [];
+  const assets = upgrades.map((id) => ({ ...newAsset(id, 0), acquiredDay: Math.min(boughtOn(id), day) }));
+  const assetsSen = sumSen(assets.filter((a) => a.acquiredDay < day).map((a) => a.costSen));
+  return {
+    ...v4,
+    schemaVersion: 5,
+    assets,
+    dayStart: isObj(v4.dayStart) ? { ...v4.dayStart, assetsSen } : v4.dayStart,
+    history: history
+      ? history.map((r: unknown) =>
+          isObj(r)
+            ? {
+                ...r,
+                // Assets bought that day are recognised at cost; none were depreciated.
+                openingAssetsSen: 0,
+                closingAssetsSen: typeof r.capexSen === 'number' ? r.capexSen : 0,
+                expenses: isObj(r.expenses) ? { ...r.expenses, depreciationSen: 0 } : r.expenses,
+              }
+            : r,
+        )
+      : v4.history,
+  };
+}
+
 export type MigrationResult =
   | { ok: true; game: unknown; fromVersion: number }
   /** `newer`: written by a newer version of the game, so this build must not touch it. */
@@ -269,6 +315,10 @@ export function migrateSave(raw: unknown): MigrationResult {
   if (version === 3) {
     game = migrateV3toV4(game);
     version = 4;
+  }
+  if (version === 4) {
+    game = migrateV4toV5(game);
+    version = 5;
   }
   if (version !== SAVE_SCHEMA_VERSION) return { ok: false, error: 'Migrasi simpanan tidak lengkap.' };
   return { ok: true, game, fromVersion };

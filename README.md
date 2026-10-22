@@ -67,13 +67,13 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Demand model:** reputation, weekday, price elasticity, promotions, upgrades, events, substitution on stock-outs and price objections, and drink→croissant add-ons.
 - **Service capacity:** hourly order capacity from staff (baristas and cashiers) and upgrades. Customers beyond capacity leave.
 - **Staff:** three deterministic candidates each day, a hiring fee, daily wages, firing with confirmation, and staff slots (2, or 4 with an upgrade). The team's names are recorded at the start of each day, so hiring or firing never renames or duplicates the day's candidates.
-- **Upgrades (9):** capital investments that affect capacity, footfall, demand, spoilage, reputation, utilities, staff slots or supplier cost, gated by café level.
+- **Upgrades (9):** capital investments that affect capacity, footfall, demand, spoilage, reputation, utilities, staff slots or supplier cost, gated by café level. Each is a fixed asset depreciated straight-line over 90 closes; the upgrades screen shows its book value and daily charge.
 - **Promotions (5):** none, social media, flyers, a 10% discount, and an influencer (level 2).
 - **Events (15):** forecast events are visible during preparation and apply from opening (weather, festivals, a supplier price spike and more). Surprise events are revealed on opening and take effect from the hour they happen; for example, the espresso machine breaks at 11:00 and the viral post lands at 12:00 (others include a food reviewer, health inspection, bulk office order and power outage). Some are mitigated by upgrades.
 - **Bank loans (3):** RM2,000 / RM5,000 / RM12,000 over 10 / 20 / 30 days at 5% / 8% / 12% flat interest, gated by café level, one at a time. Installments are exact to the sen (the last one absorbs rounding). Early settlement, a dashboard debt hint and the day's installment in the fixed-cost forecast.
 - **Weekend and public-holiday goals:** a revenue target for every Saturday, Sunday and public holiday, set from the recent average when the day starts (see *How to play*), shown before opening, during the replay and in the report, the result card and the week's summary.
 - **Objectives (19) and levels (4).** Savings objectives count cash net of loan principal, so borrowed money never completes them.
-- **Reports:** a reconciled P&L, cash flow, an inventory bridge, a debt bridge, 12 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
+- **Reports:** a reconciled P&L, cash flow, an inventory bridge, a debt bridge, a fixed-asset bridge, 13 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
 - **Weekly summaries:** every 7th day's report (Sunday) opens with a summary of the week (revenue, net profit, customers, profitable days, best day, service rate, cash and reputation movement, sales goals met) compared with the previous week, with its own shareable PNG card and copyable text. *Kewangan → Laporan → Mingguan* lists every week, marking the week still being played and any week cut short by the history limit; comparisons are only made between two complete weeks.
 - **Finance:** revenue vs net-profit chart, cash chart, table view, expense breakdown, daily and weekly report history, a transaction ledger and loans.
 - **Persistence:** a versioned save with autosave after every action, validation, migration, corrupt-save backup and recovery (a backup this build can load can be restored from Settings), and confirmed reset (also when restarting after bankruptcy).
@@ -130,7 +130,7 @@ src/
 - **The UI never calculates financial results.** Components render values from `engine.ts`, `selectors.ts`, `economy.quotePurchase` and `reports.ts`.
 - **Each day is processed exactly once.** `openCafe(state, day)` is rejected unless `day === state.day`, the phase is `prep`, and `lastSettledDay < day`. The reducer is pure, so React StrictMode double-invocation is harmless. Repeated taps are ignored silently, and the button also disables itself.
 - **Determinism.** Events, demand and candidates come from `hash(seed, day, purpose)`. Reloading cannot re-roll a day, and tests use fixed seeds.
-- **Accounting.** Stock purchases reduce cash immediately and increase inventory value. COGS is recognised only when units sell, using weighted-average cost. When the last unit leaves, the remaining value is released, so no rounding residue is left. Spoilage is a non-cash write-off shown under *Lain-lain*. Upgrades are capital spending: they reduce cash but are not expensed. Loans are financing: the money received and principal repaid move cash and debt but not profit; only interest is an expense (under *Lain-lain*).
+- **Accounting.** Stock purchases reduce cash immediately and increase inventory value. COGS is recognised only when units sell, using weighted-average cost. When the last unit leaves, the remaining value is released, so no rounding residue is left. Spoilage is a non-cash write-off shown under *Lain-lain*. Upgrades are capital spending: they reduce cash when bought and become fixed assets at cost, depreciated straight-line over 90 closes (an equal non-cash charge at each close from the day of purchase, the last absorbing the rounding), shown as *Susut nilai*. Loans are financing: the money received and principal repaid move cash and debt but not profit; only interest is an expense (under *Lain-lain*).
 
 ### Report reconciliation
 
@@ -144,12 +144,13 @@ src/
 - opening inventory + purchases − COGS − spoilage = closing inventory
 - loan transactions = loan received − principal repaid
 - opening debt + loan received − principal repaid = closing debt
-- net profit − Δinventory − capex + loan received − principal repaid = Δcash
+- opening fixed assets + capex − depreciation = closing fixed assets
+- net profit + depreciation − Δinventory − capex + loan received − principal repaid = Δcash
 
 ### Save format
 
-- Key: `rlt-cafe-empire/save`. Envelope: `{ schemaVersion: 4, savedAt, saveId, game }`.
-- **Migration:** `migrateSave()` upgrades known older formats step by step (v1 → v2 → v3 → v4). The v1 prototype format (money in ringgit decimals, no ledger) becomes v2; v2 saves gain the loan fields (no loan, zero debt, zero interest in past reports) to become v3; v3 saves gain the sales-goal fields (no goal on past days, none met; a save made while preparing a weekend or public holiday gets that day's goal) to become v4. Every step is covered by unit and e2e tests. Newer-than-supported versions are rejected, and a tab of the previous build shows a reload screen instead of touching a v4 save.
+- Key: `rlt-cafe-empire/save`. Envelope: `{ schemaVersion: 5, savedAt, saveId, game }`.
+- **Migration:** `migrateSave()` upgrades known older formats step by step (v1 → v2 → v3 → v4 → v5). The v1 prototype format (money in ringgit decimals, no ledger) becomes v2; v2 saves gain the loan fields (no loan, zero debt, zero interest in past reports) to become v3; v3 saves gain the sales-goal fields (no goal on past days, none met; a save made while preparing a weekend or public holiday gets that day's goal) to become v4; in v4 saves each upgrade becomes a fixed asset at full cost with no depreciation taken yet (upgrades were never expensed before), depreciated from the next close, and past reports gain zero depreciation, to become v5. Every step is covered by unit and e2e tests. Newer-than-supported versions are rejected, and a tab of the previous build shows a reload screen instead of touching a newer save.
 - **Validation:** `validateGameState()` checks types, integer money, ranges, known IDs, phase consistency and report structure.
 - **Write ids:** each write stores a random `saveId` before the game data, so `peekSaveId()` can detect another tab's write without parsing the whole save.
 - **Recovery:** if the save is malformed or invalid, the raw text is copied to `rlt-cafe-empire/save-rosak`, a new game starts and the player sees a notice.
@@ -165,7 +166,7 @@ src/
 npm test
 ```
 
-There are 171 tests in 10 suites (`src/game/__tests__`):
+There are 181 tests in 11 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -176,6 +177,7 @@ There are 171 tests in 10 suites (`src/game/__tests__`):
 | `save.test.ts` | save/load round trips, export/import (round trip, file naming, invalid and oversized files, v1 import), save ids and other-tab write detection, malformed JSON, invalid values, newer-version saves left untouched, kept copies (order, de-duplication, limit, the old backup key, removal, full storage, dropped before the current save fails), comparing two copies of a game (progress order, earlier point vs diverging branch, field order written by another build, mid-preparation snapshots, changes without a transaction measured from the shared point or the day's recorded starting name and prices, which game stays), throwing/unavailable storage, v1 migration, reset |
 | `loans.test.ts` | exact installment schedules, taking a loan (financing, level lock, one at a time, phase lock), installments at each close until repaid, charges when cash is short, fixed-cost forecast, free same-day cancellation, early settlement, borrowed cash excluded from savings objectives, v2→v3 migration, loan validation |
 | `weekly.test.ts` | week numbering, weekly totals equal their daily reports, comparisons only between complete weeks, partial (history-limited) vs in-progress weeks, the week ending on a day |
+| `assets.test.ts` | the straight-line schedule (equal charges, rounding in the last, nothing after), an upgrade as an asset (first charge on the day of purchase, non-cash, every report reconciles over a long game), book value and daily charge in the upgrades view, asset validation, v4→v5 migration (owned before today vs bought today, purchase no longer in the history) |
 | `goals.test.ts` | which days have a goal, the target (average of up to seven days, +20%/+35%, rounded up, minimum, too few days), each day's goal fixed at its start and reported at its close, the Friday heads-up, goals met / perfect weekends / public holidays and their objectives, weekly goal counts, day and week share texts, v3→v4 migration, goal validation |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
 | `selectors.test.ts` | stock levels, restock plan, forecast never leaks surprises, price preview, hire capacity gain with upgrades, reputation display, chart series, compact labels |
@@ -194,10 +196,11 @@ npm run test:e2e
 | `screens.spec.ts` | no horizontal overflow and no touch target under 40px on every screen at 360/390/768px; menu, inventory (low stock, insufficient funds), staff hiring, finance charts/table/report sheet/ledger, share-card download |
 | `persistence.spec.ts` | corrupt-save backup and recovery, v1 migration, confirmed reset, bankruptcy and confirmed restart |
 | `offline.spec.ts` | after the first visit, with the network cut for both the page and the service worker, the game reloads and keeps playing (charts included); other pages on the origin are not answered with the game; manifest and icons are served |
-| `save-versions.spec.ts` | a newer-version save is left untouched (reload screen at start-up and in a running tab, with focus on it); an older-build tab that is behind cannot replace newer progress and a diverging copy is kept aside; progress further ahead in an older-build tab (v2 or v3) is adopted, and playing on saves it in the current format; a loadable backup copy is restored from Settings and focus stays in the sheet; a bankrupt café set aside is not announced as progress; a kept copy (24-letter name, no overflow) can be removed, its start-up notice goes with it and Tab/Shift+Tab stay in the sheet; a sheet keeps scrolling with the keyboard after its text is clicked; menu changes in an older-build tab do not pile up copies |
+| `save-versions.spec.ts` | a newer-version save is left untouched (reload screen at start-up and in a running tab, with focus on it); an older-build tab that is behind cannot replace newer progress and a diverging copy is kept aside; progress further ahead in an older-build tab (v2, v3 or v4) is adopted, and playing on saves it in the current format; a loadable backup copy is restored from Settings and focus stays in the sheet; a bankrupt café set aside is not announced as progress; a kept copy (24-letter name, no overflow) can be removed, its start-up notice goes with it and Tab/Shift+Tab stay in the sheet; a sheet keeps scrolling with the keyboard after its text is clicked; menu changes in an older-build tab do not pile up copies |
 | `keyboard.spec.ts` | Tab stays inside a sheet after clicking its text; a sheet with no controls scrolls with the keyboard and shows the app's focus outline; every section of a past report opens with the keyboard; focus moves to the main content, without scrolling, when a confirmation disables the button that opened it |
 | `backup.spec.ts` | export downloads the save; import restores it after a reset; an invalid file is rejected without changes; restoring and going bankrupt again on the same day shows the game-over dialog; keyboard focus stays inside the settings sheet |
 | `loans.spec.ts` | take a loan, installments in reconciled reports, early settlement and its objective; a v2 save migrates on load |
+| `assets.spec.ts` | buying an upgrade shows its depreciation, the report charges it as a non-cash expense with the asset bridge and reconciles, and its book value falls the next day |
 | `weekly.spec.ts` | seven days played through the UI: the Friday heads-up, the Saturday goal on the dashboard, before opening, in the replay and in the report; the day-7 report shows the week summary, whose card downloads as an image and copies as text; the weekly list (with goals met) and its summary sheet |
 | `multi-tab-and-dialogs.spec.ts` | second tab follows the first, stale-tab action and manual save never overwrite newer progress, toasts never cover dialog buttons or the sheet's close button, Escape closes only the top dialog |
 
@@ -214,6 +217,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 - **Day flow:** `prep → (open) → closed → next day`. Editing is locked while closed so every transaction belongs to exactly one day's report.
 - **Marketing** is charged when the café opens. If cash is no longer sufficient, the promotion is cancelled and noted in the report.
 - **Objective rewards** are XP and levels, not cash, to keep the financial statements clean.
+- **Depreciation:** every upgrade uses one straight-line life of 90 closes (game time is compressed, so real useful lives would never show). It starts at the close of the day of purchase. Upgrades bought before this version start depreciating at the first close after the update, so their cost reaches profit exactly once.
 - **Hiring** charges a one-off fee (other expenses). Firing is free but requires confirmation, and the last barista cannot be fired.
 - **Imagery:** the café scene is a lightweight hand-built SVG illustration (morning and evening variants) instead of photographs. This keeps the app small and offline-friendly, and avoids licensing questions.
 
@@ -222,13 +226,13 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 ## Known limitations
 
 - Saves are local to one browser on one device, and there is no cloud sync. Use Settings → export/import to back up a game or move it to another device. Clearing site data without an exported file erases progress. Playing in two tabs is safe but not simultaneous: the most recent save wins and the other tab follows it.
-- Single café only. There is no multi-branch "empire" layer, ingredient-level recipes, staff morale or depreciation.
+- Single café only. There is no multi-branch "empire" layer, ingredient-level recipes or staff morale.
 - Report history keeps the latest 60 days. Lifetime totals are kept in stats.
 - Balance is tuned with a scripted bot over ~45 days and would benefit from playtesting.
 
 ## Recommended next steps
 
-1. Add a second-branch expansion, ingredient-level inventory (beans, milk, tea, pastry) and simple depreciation.
+1. Add a second-branch expansion and ingredient-level inventory (beans, milk, tea, pastry).
 2. Support localisation (English) through a string table.
 3. Add a forecast of today's revenue next to the sales goal, so players can judge how much stock and staff the goal needs.
 

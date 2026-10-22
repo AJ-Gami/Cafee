@@ -3,7 +3,7 @@
  * numbers, not real Malaysian market data.
  */
 
-export const SAVE_SCHEMA_VERSION = 4;
+export const SAVE_SCHEMA_VERSION = 5;
 
 export const STARTING_CASH_SEN = 500_000; // RM5,000
 export const STARTING_REPUTATION = 50;
@@ -55,6 +55,9 @@ export const EXTENDED_STAFF_SLOTS = 4;
 export const CANDIDATES_PER_DAY = 3;
 
 export const HISTORY_LIMIT = 60;
+
+/** Upgrades are fixed assets, depreciated straight-line over this many closes. */
+export const ASSET_LIFE_DAYS = 90;
 
 /**
  * Sales goals on Saturdays, Sundays and public holidays: a revenue target above the average of

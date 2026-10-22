@@ -6,6 +6,7 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Money } from '../../components/Money';
+import { ASSET_LIFE_DAYS } from '../../game/constants';
 import { levelInfo } from '../../game/objectives';
 import { upgradeViews, type UpgradeView } from '../../game/selectors';
 
@@ -18,8 +19,8 @@ export function UpgradesPanel({ locked }: { locked: boolean }) {
   return (
     <div className="space-y-3">
       <p className="px-1 text-sm text-espresso-600">
-        Naik taraf ialah pelaburan modal: tunai berkurang serta-merta tetapi tidak dicatat sebagai perbelanjaan harian. Tahap kafe anda: {level.current.level} (
-        {level.current.title}).
+        Naik taraf ialah aset tetap: tunai berkurang serta-merta, kemudian kosnya dicatat sebagai susut nilai (perbelanjaan bukan tunai) yang sama
+        setiap kali kafe ditutup selama {ASSET_LIFE_DAYS} hari. Tahap kafe anda: {level.current.level} ({level.current.title}).
       </p>
       {views.map((u) => (
         <Card key={u.id} className={u.owned ? 'border-sage-600/30 bg-sage-50' : ''}>
@@ -45,6 +46,19 @@ export function UpgradesPanel({ locked }: { locked: boolean }) {
               </ul>
             </div>
           </div>
+          {u.asset ? (
+            <p className="mt-3 rounded-xl bg-cream-100 px-3 py-2 text-sm text-espresso-700">
+              Nilai buku <Money sen={u.asset.bookValueSen} />
+              {u.asset.daysLeft > 0 ? (
+                <>
+                  {' '}
+                  · susut nilai <Money sen={u.dailyDepreciationSen} /> sehari, {u.asset.daysLeft} hari lagi
+                </>
+              ) : (
+                ' · telah disusutnilaikan sepenuhnya'
+              )}
+            </p>
+          ) : null}
           {!u.owned ? (
             <div className="mt-3 flex items-center justify-between gap-3">
               <p className="text-lg font-semibold">
@@ -77,7 +91,10 @@ export function UpgradesPanel({ locked }: { locked: boolean }) {
             <p>
               <Money sen={target.costSen} /> akan ditolak daripada tunai anda serta-merta. Baki tunai semasa: <Money sen={game.cashSen} />.
             </p>
-            <p className="mt-2 text-sm text-espresso-600">Naik taraf adalah kekal dan tidak boleh dijual semula.</p>
+            <p className="mt-2 text-sm text-espresso-600">
+              Kos ini dicatat sebagai susut nilai kira-kira <Money sen={target.dailyDepreciationSen} /> setiap kali kafe ditutup selama{' '}
+              {target.lifeDays} hari, bermula malam ini. Naik taraf adalah kekal dan tidak boleh dijual semula.
+            </p>
           </>
         ) : null}
       </ConfirmDialog>

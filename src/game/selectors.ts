@@ -11,6 +11,7 @@ import { PROMOTION_ORDER, PROMOTIONS, type PromotionDef } from './data/promotion
 import { UPGRADE_ORDER, UPGRADES, type UpgradeDef } from './data/upgrades';
 import { estimateDemand, modifiersForState, reputationPoints, salePrice, weekdayIndex, type DemandEstimate } from './demand';
 import { averageUnitCost, canAfford, inventoryValue, projectedFixedCosts, quotePurchase, todaysUnitCost } from './economy';
+import { bookValue, newAsset, nextCharge, totalBookValue } from './assets';
 import { isEventVisibleInPrep, resolveEvent } from './events';
 import { GOAL_TITLE, goalRaisePercent } from './goals';
 import { installment, offerTotalInterest, remainingPrincipal, settlementQuote, type Installment, type SettlementQuote } from './loans';
@@ -162,14 +163,34 @@ export interface UpgradeView extends UpgradeDef {
   owned: boolean;
   locked: boolean;
   affordable: boolean;
+  /** Depreciation per close and the closes it lasts (for an upgrade not yet bought, if bought today). */
+  dailyDepreciationSen: number;
+  lifeDays: number;
+  /** For an upgrade owned: its book value and the closes of depreciation left. */
+  asset: { bookValueSen: number; daysLeft: number } | null;
 }
 
 export function upgradeViews(state: GameState): UpgradeView[] {
   const level = currentLevel(state);
   return UPGRADE_ORDER.map((id) => {
     const def = UPGRADES[id];
-    return { ...def, owned: state.upgrades.includes(id), locked: level < def.minLevel, affordable: def.costSen <= state.cashSen };
+    const owned = state.assets.find((a) => a.upgradeId === id);
+    const asset = owned ?? newAsset(id, state.day);
+    return {
+      ...def,
+      owned: state.upgrades.includes(id),
+      locked: level < def.minLevel,
+      affordable: def.costSen <= state.cashSen,
+      dailyDepreciationSen: nextCharge(asset),
+      lifeDays: asset.lifeDays,
+      asset: owned ? { bookValueSen: bookValue(owned), daysLeft: owned.lifeDays - owned.chargedDays } : null,
+    };
   });
+}
+
+/** Book value of the café's fixed assets now. */
+export function fixedAssetsValue(state: GameState): number {
+  return totalBookValue(state.assets);
 }
 
 export interface ObjectiveView {

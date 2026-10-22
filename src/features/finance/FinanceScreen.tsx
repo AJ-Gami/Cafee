@@ -162,6 +162,7 @@ function ExpenseBars({ report }: { report: NonNullable<ReturnType<typeof lastRep
     { label: 'Sewa', sen: e.rentSen },
     { label: 'Utiliti', sen: e.utilitiesSen },
     { label: 'Pemasaran', sen: e.marketingSen },
+    ...(e.depreciationSen > 0 ? [{ label: 'Susut nilai', sen: e.depreciationSen }] : []),
     { label: 'Lain-lain', sen: e.otherSen },
   ];
   const max = Math.max(1, ...rows.map((r) => r.sen));

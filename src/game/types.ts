@@ -184,6 +184,8 @@ export interface ExpenseBreakdown {
   spoilageSen: number;
   /** Interest paid on a bank loan. */
   interestSen: number;
+  /** Non-cash: the day's share of the cost of the café's fixed assets (upgrades). */
+  depreciationSen: number;
 }
 
 export type GoalKind = 'weekend' | 'holiday';
@@ -231,6 +233,9 @@ export interface DayReport {
   loanPrincipalRepaidSen: number;
   openingDebtSen: number;
   closingDebtSen: number;
+  /** Book value of fixed assets (upgrades) at the start and end of the day. */
+  openingAssetsSen: number;
+  closingAssetsSen: number;
 
   openingInventorySen: number;
   closingInventorySen: number;
@@ -278,6 +283,8 @@ export interface DayStartSnapshot {
   inventorySen: number;
   /** Loan principal still owed when the day started. */
   debtSen: number;
+  /** Book value of fixed assets when the day started. */
+  assetsSen: number;
   /**
    * Names of the team when the day started. They are reserved for the whole day so hiring or
    * firing during preparation never renames today's candidates. Absent in older saves.
@@ -320,6 +327,19 @@ export interface GameState {
   loan: ActiveLoan | null;
   /** Today's sales goal (Saturdays, Sundays and public holidays), fixed when the day starts. */
   goal: DayGoal | null;
+  /** Fixed assets: one per upgrade owned, in the order bought. */
+  assets: FixedAsset[];
+}
+
+/** An upgrade carried at cost and depreciated straight-line, one charge at each close. */
+export interface FixedAsset {
+  upgradeId: UpgradeId;
+  costSen: number;
+  lifeDays: number;
+  /** Day it was bought; its first charge is at that day's close. */
+  acquiredDay: number;
+  /** Daily charges taken so far (at most lifeDays). */
+  chargedDays: number;
 }
 
 export type LoanOfferId = 'mikro' | 'perniagaan' | 'pengembangan';

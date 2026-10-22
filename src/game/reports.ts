@@ -61,9 +61,9 @@ export function reconcileReport(report: DayReport): Reconciliation {
     },
     {
       id: 'expenses',
-      label: 'Jumlah perbelanjaan = gaji + sewa + utiliti + pemasaran + lain-lain',
+      label: 'Jumlah perbelanjaan = gaji + sewa + utiliti + pemasaran + susut nilai + lain-lain',
       expectedSen: report.totalExpensesSen,
-      actualSen: e.wagesSen + e.rentSen + e.utilitiesSen + e.marketingSen + e.otherSen,
+      actualSen: e.wagesSen + e.rentSen + e.utilitiesSen + e.marketingSen + e.depreciationSen + e.otherSen,
     },
     {
       id: 'expenses-cash',
@@ -102,11 +102,18 @@ export function reconcileReport(report: DayReport): Reconciliation {
       actualSen: report.openingDebtSen + report.loanProceedsSen - report.loanPrincipalRepaidSen,
     },
     {
+      id: 'assets',
+      label: 'Aset tetap awal + pelaburan − susut nilai = aset tetap akhir',
+      expectedSen: report.closingAssetsSen,
+      actualSen: report.openingAssetsSen + report.capexSen - e.depreciationSen,
+    },
+    {
       id: 'bridge',
-      label: 'Untung bersih − kenaikan inventori − pelaburan + pinjaman bersih = perubahan tunai',
+      label: 'Untung bersih + susut nilai − kenaikan inventori − pelaburan + pinjaman bersih = perubahan tunai',
       expectedSen: report.closingCashSen - report.openingCashSen,
       actualSen:
-        report.netProfitSen -
+        report.netProfitSen +
+        e.depreciationSen -
         (report.closingInventorySen - report.openingInventorySen) -
         report.capexSen +
         report.loanProceedsSen -

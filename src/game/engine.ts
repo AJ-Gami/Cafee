@@ -29,6 +29,7 @@ import {
   quotePurchase,
   takeFromStock,
 } from './economy';
+import { depreciateAtClose, newAsset, totalBookValue } from './assets';
 import { resolveEvent, rollEventForDay, type ResolvedEvent } from './events';
 import { dayGoalFor, GOAL_TITLE, goalResult, isSunday } from './goals';
 import { applyBps, formatRM, sumSen } from './money';
@@ -168,6 +169,7 @@ export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME
       cashSen: STARTING_CASH_SEN,
       inventorySen: inventoryValue(products),
       debtSen: 0,
+      assetsSen: 0,
       staffNames: [STARTING_STAFF.name],
       cafeName: sanitizeCafeName(cafeName) ?? DEFAULT_CAFE_NAME,
       priceSen: menuPrices(products),
@@ -195,6 +197,7 @@ export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME
     loan: null,
     // Day 1 is a Monday with no earlier days to set a goal from.
     goal: null,
+    assets: [],
   };
 }
 
@@ -366,7 +369,12 @@ export function buyUpgrade(state: GameState, upgradeId: UpgradeId): EngineResult
       products[id] = { ...p, unitCostSen: p.unitCostSen - applyBps(p.unitCostSen, discount) };
     }
   }
-  let next: GameState = { ...state, products, upgrades: [...state.upgrades, upgradeId] };
+  let next: GameState = {
+    ...state,
+    products,
+    upgrades: [...state.upgrades, upgradeId],
+    assets: [...state.assets, newAsset(upgradeId, state.day)],
+  };
   next = withTransaction(next, 'upgrade', -def.costSen, `Naik taraf: ${def.name}`);
   return succeed(next, `${def.name} dipasang!`);
 }
@@ -545,6 +553,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
   const paidFor = (type: TransactionType): number => 0 - totalOf(type);
 
   // --- Profit & loss ---
+  const depreciation = depreciateAtClose(state.assets);
   const revenueSen = sumSen(PRODUCT_IDS.map((id) => sim.lines[id].revenueSen));
   const cogsSen = sumSen(PRODUCT_IDS.map((id) => sim.lines[id].cogsSen));
   const spoilageSen = sumSen(PRODUCT_IDS.map((id) => spoiled[id].valueSen));
@@ -558,11 +567,12 @@ export function openCafe(state: GameState, day: number): EngineResult {
     eventCostSen: paidFor('event_cost'),
     spoilageSen,
     interestSen: paidFor('loan_interest'),
+    depreciationSen: depreciation.chargeSen,
     otherSen: 0,
   };
   expenses.otherSen = expenses.hiringSen + expenses.eventCostSen + expenses.spoilageSen + expenses.interestSen;
   const totalExpensesSen =
-    expenses.wagesSen + expenses.rentSen + expenses.utilitiesSen + expenses.marketingSen + expenses.otherSen;
+    expenses.wagesSen + expenses.rentSen + expenses.utilitiesSen + expenses.marketingSen + expenses.depreciationSen + expenses.otherSen;
   const grossProfitSen = revenueSen - cogsSen;
   const netProfitSen = grossProfitSen + otherIncomeSen - totalExpensesSen;
 
@@ -647,6 +657,8 @@ export function openCafe(state: GameState, day: number): EngineResult {
     loanPrincipalRepaidSen: paidFor('loan_principal'),
     openingDebtSen: state.dayStart.debtSen,
     closingDebtSen: remainingPrincipal(loanAfter),
+    openingAssetsSen: state.dayStart.assetsSen,
+    closingAssetsSen: totalBookValue(depreciation.assets),
     openingInventorySen: state.dayStart.inventorySen,
     closingInventorySen: inventoryValue(products),
     reputationBefore: state.reputation,
@@ -693,6 +705,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     lastSettledDay: day,
     stats,
     loan: loanAfter,
+    assets: depreciation.assets,
   };
 
   const evaluated = evaluateObjectives(settled);
@@ -732,6 +745,7 @@ export function startNextDay(state: GameState, day: number): EngineResult {
       cashSen: state.cashSen,
       inventorySen: inventoryValue(state.products),
       debtSen: remainingPrincipal(state.loan),
+      assetsSen: totalBookValue(state.assets),
       staffNames: state.staff.map((s) => s.name),
       cafeName: state.cafeName,
       priceSen: menuPrices(state.products),

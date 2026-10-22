@@ -17,9 +17,10 @@ import { LOAN_OFFERS } from './data/loans';
 import { OBJECTIVES } from './data/objectives';
 import { PROMOTIONS } from './data/promotions';
 import { UPGRADES } from './data/upgrades';
+import { totalBookValue } from './assets';
 import { goalKindFor } from './goals';
 import { installment, remainingPrincipal } from './loans';
-import type { ActiveLoan, EventId, GameState } from './types';
+import type { ActiveLoan, EventId, FixedAsset, GameState } from './types';
 import { PRODUCT_IDS } from './types';
 
 type Obj = Record<string, unknown>;
@@ -133,14 +134,25 @@ function validateReport(v: Validator, value: unknown, path: string): void {
   ]) {
     v.int(r[key], `${path}.${key}`);
   }
-  for (const key of ['loanProceedsSen', 'loanPrincipalRepaidSen', 'openingDebtSen', 'closingDebtSen']) {
+  for (const key of ['loanProceedsSen', 'loanPrincipalRepaidSen', 'openingDebtSen', 'closingDebtSen', 'openingAssetsSen', 'closingAssetsSen']) {
     v.int(r[key], `${path}.${key}`, 0);
   }
   v.num(r.reputationBefore, `${path}.reputationBefore`, 0, 100);
   v.num(r.reputationAfter, `${path}.reputationAfter`, 0, 100);
   const exp = v.obj(r.expenses, `${path}.expenses`);
   if (exp) {
-    for (const key of ['wagesSen', 'rentSen', 'utilitiesSen', 'marketingSen', 'otherSen', 'hiringSen', 'eventCostSen', 'spoilageSen', 'interestSen']) {
+    for (const key of [
+      'wagesSen',
+      'rentSen',
+      'utilitiesSen',
+      'marketingSen',
+      'otherSen',
+      'hiringSen',
+      'eventCostSen',
+      'spoilageSen',
+      'interestSen',
+      'depreciationSen',
+    ]) {
       v.int(exp[key], `${path}.expenses.${key}`, 0);
     }
   }
@@ -188,6 +200,47 @@ function validateReport(v: Validator, value: unknown, path: string): void {
         v.check(goal.achieved === r.revenueSen >= goal.targetSen, `${path}.goal.achieved: tidak sepadan dengan hasil jualan`);
       }
     }
+  }
+}
+
+/**
+ * One asset per upgrade owned, never depreciated past its cost or beyond the closes since it was
+ * bought; while preparing, the day's opening book value is that of the assets bought before today.
+ */
+function validateAssets(v: Validator, s: Obj, upgrades: unknown[] | null): void {
+  const list = v.arr(s.assets, 'game.assets');
+  if (!list) return;
+  const errorsBefore = v.errors.length;
+  list.forEach((value, i) => {
+    const path = `game.assets[${i}]`;
+    const a = v.obj(value, path);
+    if (!a) return;
+    v.oneOf(a.upgradeId, Object.keys(UPGRADES), `${path}.upgradeId`);
+    v.int(a.costSen, `${path}.costSen`, 1, 100_000_000);
+    v.int(a.lifeDays, `${path}.lifeDays`, 1, 3_650);
+    v.int(a.acquiredDay, `${path}.acquiredDay`, 0, typeof s.day === 'number' ? s.day : 100_000);
+    v.int(a.chargedDays, `${path}.chargedDays`, 0, typeof a.lifeDays === 'number' ? a.lifeDays : 0);
+  });
+  if (v.errors.length > errorsBefore) return;
+  const assets = list as FixedAsset[];
+  if (upgrades) {
+    const ids = assets.map((a) => a.upgradeId);
+    v.check(ids.length === upgrades.length && ids.every((id, i) => id === upgrades[i]), 'game.assets: tidak sepadan dengan naik taraf');
+  }
+  if (typeof s.lastSettledDay === 'number') {
+    const settled = s.lastSettledDay;
+    v.check(
+      assets.every((a) => a.chargedDays <= Math.max(0, settled - a.acquiredDay + 1)),
+      'game.assets: susut nilai melebihi hari yang ditutup',
+    );
+  }
+  const dayStart = s.dayStart as Obj | undefined;
+  if (s.phase === 'prep' && typeof s.day === 'number' && dayStart) {
+    const day = s.day;
+    v.check(
+      dayStart.assetsSen === totalBookValue(assets.filter((a) => a.acquiredDay < day)),
+      'game.dayStart.assetsSen: tidak sepadan dengan nilai buku aset',
+    );
   }
 }
 
@@ -301,6 +354,7 @@ export function validateGameState(value: unknown): ValidationResult {
     v.int(dayStart.cashSen, 'game.dayStart.cashSen');
     v.int(dayStart.inventorySen, 'game.dayStart.inventorySen', 0);
     v.int(dayStart.debtSen, 'game.dayStart.debtSen', 0);
+    v.int(dayStart.assetsSen, 'game.dayStart.assetsSen', 0);
     if (dayStart.staffNames !== undefined) {
       const names = v.arr(dayStart.staffNames, 'game.dayStart.staffNames');
       if (names) {
@@ -354,6 +408,7 @@ export function validateGameState(value: unknown): ValidationResult {
   }
 
   if (s.loan !== null) validateLoan(v, s.loan, s);
+  validateAssets(v, s, upgrades);
 
   if (v.errors.length > 0) return { ok: false, errors: v.errors };
   return { ok: true, state: value as GameState };

@@ -55,19 +55,29 @@ test('a running tab that sees a newer-version save stops instead of overwriting 
 });
 
 /** Write `game` as an older build would: schema `version`, without the fields later versions added. */
-async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string, version: 2 | 3 = 2): Promise<void> {
+async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string, version: 2 | 3 | 4 = 2): Promise<void> {
   const g = structuredClone(game) as unknown as Record<string, unknown> & {
     dayStart: Record<string, unknown>;
     stats: Record<string, unknown>;
-    history: Record<string, unknown>[];
+    history: (Record<string, unknown> & { expenses: Record<string, unknown> })[];
   };
   g.schemaVersion = version;
-  // Added in v4 (sales goals).
-  delete g.goal;
-  delete g.stats.goalsMet;
-  delete g.stats.holidayGoalsMet;
-  delete g.stats.perfectWeekends;
-  for (const r of g.history) delete r.goal;
+  // Added in v5 (fixed assets). These tests buy no upgrades, so no depreciation is in the totals.
+  delete g.assets;
+  delete g.dayStart.assetsSen;
+  for (const r of g.history) {
+    delete r.openingAssetsSen;
+    delete r.closingAssetsSen;
+    delete r.expenses.depreciationSen;
+  }
+  if (version <= 3) {
+    // Added in v4 (sales goals).
+    delete g.goal;
+    delete g.stats.goalsMet;
+    delete g.stats.holidayGoalsMet;
+    delete g.stats.perfectWeekends;
+    for (const r of g.history) delete r.goal;
+  }
   if (version === 2) {
     // Added in v3 (loans).
     delete g.loan;
@@ -116,7 +126,7 @@ test('an older-build tab that is behind cannot replace newer progress; a divergi
   await expect(a.getByRole('button', { name: 'Pulihkan salinan sandaran: Kopi Kita, Hari 1' })).toBeVisible();
 });
 
-for (const version of [2, 3] as const) {
+for (const version of [2, 3, 4] as const) {
   test(`progress made further ahead in an older-build tab (v${version}) is adopted, not reverted`, async ({ context }) => {
     const a = await context.newPage();
     const old = await context.newPage();
@@ -143,9 +153,9 @@ for (const version of [2, 3] as const) {
     expect(await keptCopies(a)).toEqual([]);
     // Playing on here saves in this build's format, with the fields the old build lacked.
     await restockToForecast(a);
-    const upgraded = (await readSave(a)) as (StoredSave & { game: { goal: unknown; stats: Record<string, number> } }) | null;
+    const upgraded = (await readSave(a)) as (StoredSave & { game: { goal: unknown; assets: unknown[]; stats: Record<string, number> } }) | null;
     expect(upgraded?.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(upgraded?.game).toMatchObject({ day: 2, goal: null, stats: { goalsMet: 0, holidayGoalsMet: 0, perfectWeekends: 0 } });
+    expect(upgraded?.game).toMatchObject({ day: 2, goal: null, assets: [], dayStart: { assetsSen: 0 }, stats: { goalsMet: 0 } });
   });
 }
 

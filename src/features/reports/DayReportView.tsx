@@ -102,6 +102,7 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
           <Row label="Sewa" value={<Money sen={-e.rentSen} />} />
           <Row label="Utiliti" value={<Money sen={-e.utilitiesSen} />} />
           <Row label="Pemasaran" value={<Money sen={-e.marketingSen} />} />
+          {e.depreciationSen > 0 ? <Row label="Susut nilai aset (bukan tunai)" value={<Money sen={-e.depreciationSen} />} /> : null}
           <Row label="Lain-lain" value={<Money sen={-e.otherSen} />} />
           {e.hiringSen > 0 ? <Row indent muted label="Kos pengambilan staf" value={<Money sen={-e.hiringSen} />} /> : null}
           {e.eventCostSen > 0 ? <Row indent muted label="Kos peristiwa" value={<Money sen={-e.eventCostSen} />} /> : null}
@@ -136,6 +137,12 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
             Inventori: <Money sen={report.openingInventorySen} /> → <Money sen={report.closingInventorySen} />. Stok yang belum dijual
             bukan kos barang dijual.
           </p>
+          {report.openingAssetsSen > 0 || report.closingAssetsSen > 0 ? (
+            <p className="mt-1">
+              Aset tetap (nilai buku): <Money sen={report.openingAssetsSen} /> → <Money sen={report.closingAssetsSen} />. Pelaburan
+              mengurangkan tunai hari ini; kosnya ditolak daripada untung sedikit demi sedikit sebagai susut nilai.
+            </p>
+          ) : null}
         </div>
       </Card>
 
