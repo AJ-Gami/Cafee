@@ -33,7 +33,7 @@ The build uses a relative base (`./`), so you can host `dist/` from any static h
 3. **Close.** Wages, rent and utilities are paid. Leftover croissant dough (≈40%) and milk (≈5%) spoil overnight; coffee and tea keep.
 4. **Review the report.** It includes P&L, cash flow, customer breakdown, product performance, event outcome, timeline, transactions, reconciliation checks and a shareable result card. Then start the next day.
 
-At level 3, *Urus → Cawangan* opens a **second branch** at a campus, an office tower or a shopping mall (RM6,000–RM10,000 fit-out). It sells the same menu at the same prices, runs the same promotion and draws on the same ingredient stock, after the main café; each location has its own rent, weekday pattern, favourite products and price sensitivity, builds its own reputation and runs with 1–3 baristas. Its day is included in the report's totals, with its own section. A branch can be closed later (its remaining book value is written off) or cancelled with a full refund on the day it opened.
+At level 3, *Urus → Cawangan* opens a **branch** at a campus, an office tower or a shopping mall (RM6,000–RM10,000 fit-out); at level 4, one at each of the other two. A branch sells the same menu at the same prices and runs the same promotion; each location has its own rent, weekday pattern, favourite products and price sensitivity, builds its own reputation and runs with 1–3 baristas. Each branch holds its own ingredient stock: when the café opens, the central store sends each branch what it is short of for the day's estimate (branches in the order they were opened), and the main café sells from what is left. Each branch can buy its own upgrades (a two-head espresso machine, a lit sign, a fridge), depreciated like the café's. Every branch's day is included in the report's totals, with its own section. A branch can be closed later (its stock returns to the central store and its remaining book value is written off) or cancelled with a full refund on the day it opened.
 
 Short of cash? *Kewangan → Pinjaman* offers bank loans (fictional terms). The money arrives at once; from the next day one installment of principal plus flat interest is charged at every close, even if cash runs short. A loan can be cancelled free on the day it is taken, or paid off early later for the remaining principal plus one day's interest.
 
@@ -81,7 +81,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 - **Events (15):** forecast events are visible during preparation and apply from opening (weather, festivals, a supplier price spike and more). Surprise events are revealed on opening and take effect from the hour they happen; for example, the espresso machine breaks at 11:00 and the viral post lands at 12:00 (others include a food reviewer, health inspection, bulk office order and power outage). Some are mitigated by upgrades.
 - **Bank loans (3):** RM2,000 / RM5,000 / RM12,000 over 10 / 20 / 30 days at 5% / 8% / 12% flat interest, gated by café level, one at a time. Installments are exact to the sen (the last one absorbs rounding). Early settlement, a dashboard debt hint and the day's installment in the fixed-cost forecast.
 - **Weekend and public-holiday goals:** a revenue target for every Saturday, Sunday and public holiday, set from the recent average when the day starts (see *How to play*), shown before opening, during the replay and in the report, the result card and the week's summary.
-- **Second branch:** three locations (kampus, pejabat, pusat beli-belah) with their own rent, weekday footfall, public-holiday effect, product preferences and price sensitivity; shared menu, prices, promotion and ingredient stock (main café served first); its own reputation and 1–3 baristas; the fit-out is a fixed asset depreciated over 180 closes; restock plans, the fixed-cost forecast and the checklist include it; the report, replay, goals, weekly summaries and shares count it.
+- **Branches:** up to three, one per location (kampus, pejabat, pusat beli-belah; the first at level 3, the others at level 4), with their own rent, weekday footfall, public-holiday effect, product preferences and price sensitivity; shared menu, prices and promotion; each with its own reputation, 1–3 baristas, upgrades (machine +25% capacity, sign +10% customers, fridge −60% milk and pastry spoilage; each depreciated over 90 closes) and ingredient stock, topped up from the central store every morning (perishables to the estimate, coffee and tea with a 15% margin; a warning when the store runs short); the fit-out is a fixed asset depreciated over 180 closes; restock plans, the fixed-cost forecast and the checklist include every branch; the report, replay, goals, weekly summaries and shares count them.
 - **Objectives (20) and levels (4).** Savings objectives count cash net of loan principal, so borrowed money never completes them.
 - **Reports:** a reconciled P&L, cash flow, an inventory bridge, a debt bridge, a fixed-asset bridge, 14 automatic reconciliation checks, a shareable PNG result card (Web Share API with a download fallback) and copyable text.
 - **Weekly summaries:** every 7th day's report (Sunday) opens with a summary of the week (revenue, net profit, customers, profitable days, best day, service rate, cash and reputation movement, sales goals met) compared with the previous week, with its own shareable PNG card and copyable text. *Kewangan → Laporan → Mingguan* lists every week, marking the week still being played and any week cut short by the history limit; comparisons are only made between two complete weeks.
@@ -125,7 +125,7 @@ src/
     objectives.ts          XP, levels, objective evaluation
     loans.ts               loan schedule, installments, early settlement
     goals.ts               weekend and public-holiday sales goals
-    branch.ts              second branch: location demand, staffing, estimates
+    branch.ts              branches: location demand, staffing, upgrades, morning stock transfers
     assets.ts              fixed assets and straight-line depreciation
     engine.ts              player actions + once-per-day settlement
     reducer.ts             pure reducer mapping UI actions to the engine
@@ -162,8 +162,8 @@ src/
 
 ### Save format
 
-- Key: `rlt-cafe-empire/save`. Envelope: `{ schemaVersion: 7, savedAt, saveId, game }`.
-- **Migration:** `migrateSave()` upgrades known older formats step by step (v1 → v2 → v3 → v4 → v5 → v6 → v7). The v1 prototype format (money in ringgit decimals, no ledger) becomes v2; v2 saves gain the loan fields (no loan, zero debt, zero interest in past reports) to become v3; v3 saves gain the sales-goal fields (no goal on past days, none met; a save made while preparing a weekend or public holiday gets that day's goal) to become v4; in v4 saves each upgrade becomes a fixed asset at full cost with no depreciation taken yet (upgrades were never expensed before), depreciated from the next close, and past reports gain zero depreciation, to become v5; in v5 saves each product's stock becomes the ingredients its recipe uses, carrying the same total value (split by the ingredients' list prices), supplier prices restart from the ingredient list (less the supplier contract, if owned), and past reports keep their per-product spoilage and closing stock, to become v6; v6 saves gain the branch fields (no branch, nothing written off, none opened) to become v7. Every step is covered by unit and e2e tests. Newer-than-supported versions are rejected, and a tab of the previous build shows a reload screen instead of touching a newer save.
+- Key: `rlt-cafe-empire/save`. Envelope: `{ schemaVersion: 8, savedAt, saveId, game }`.
+- **Migration:** `migrateSave()` upgrades known older formats step by step (v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8). The v1 prototype format (money in ringgit decimals, no ledger) becomes v2; v2 saves gain the loan fields (no loan, zero debt, zero interest in past reports) to become v3; v3 saves gain the sales-goal fields (no goal on past days, none met; a save made while preparing a weekend or public holiday gets that day's goal) to become v4; in v4 saves each upgrade becomes a fixed asset at full cost with no depreciation taken yet (upgrades were never expensed before), depreciated from the next close, and past reports gain zero depreciation, to become v5; in v5 saves each product's stock becomes the ingredients its recipe uses, carrying the same total value (split by the ingredients' list prices), supplier prices restart from the ingredient list (less the supplier contract, if owned), and past reports keep their per-product spoilage and closing stock, to become v6; v6 saves gain the branch fields (no branch, nothing written off, none opened) to become v7; in v7 saves the one branch (if any) becomes the first of the list, with no upgrades and no stock of its own (it sold from the central store, which keeps it all), and past reports' branch sections gain zero branch spoilage, to become v8. Every step is covered by unit and e2e tests. Newer-than-supported versions are rejected, and a tab of the previous build shows a reload screen instead of touching a newer save.
 - **Validation:** `validateGameState()` checks types, integer money, ranges, known IDs, phase consistency and report structure.
 - **Write ids:** each write stores a random `saveId` before the game data, so `peekSaveId()` can detect another tab's write without parsing the whole save.
 - **Recovery:** if the save is malformed or invalid, the raw text is copied to `rlt-cafe-empire/save-rosak`, a new game starts and the player sees a notice.
@@ -179,7 +179,7 @@ src/
 npm test
 ```
 
-There are 205 tests in 13 suites (`src/game/__tests__`):
+There are 209 tests in 13 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -192,7 +192,7 @@ There are 205 tests in 13 suites (`src/game/__tests__`):
 | `loans.test.ts` | exact installment schedules, taking a loan (financing, level lock, one at a time, phase lock), installments at each close until repaid, charges when cash is short, fixed-cost forecast, free same-day cancellation, early settlement, borrowed cash excluded from savings objectives, v2→v3 migration, loan validation |
 | `weekly.test.ts` | week numbering, weekly totals equal their daily reports, comparisons only between complete weeks, partial (history-limited) vs in-progress weeks, the week ending on a day |
 | `assets.test.ts` | the straight-line schedule (equal charges, rounding in the last, nothing after), an upgrade as an asset (first charge on the day of purchase, non-cash, every report reconciles over a long game), book value and daily charge in the upgrades view, asset validation, v4→v5 migration (owned before today vs bought today, purchase no longer in the history) |
-| `branch.test.ts` | opening (level, cash, phase, one at a time) as capital spending, a day with a branch in the totals and reconciled, the main café served first, weeks of play at each location reconciled and valid, location weekday and holiday patterns, location costs, staffing and capacity, stock plans and the checklist, same-day cancellation with refund, closing with a write-off, branch validation, v6→v7 migration |
+| `branch.test.ts` | opening (level for each branch in turn, cash, phase, one per location) as capital spending, a day with a branch in the totals and reconciled, morning transfers of each branch's shortfall and the stock it keeps, branches supplied before the main café (with the short-delivery warning), weeks of play with all three branches reconciled and valid, location weekday and holiday patterns, location costs and level locks, staffing and capacity, stock plans and the checklist per branch, branch upgrades (capacity, footfall, spoilage, depreciation), same-day cancellation with refunds, closing with stock returned and a write-off, branch validation, v6→v8 and v7→v8 migration |
 | `goals.test.ts` | which days have a goal, the target (average of up to seven days, +20%/+35%, rounded up, minimum, too few days), each day's goal fixed at its start and reported at its close, the Friday heads-up, goals met / perfect weekends / public holidays and their objectives, weekly goal counts, day and week share texts, v3→v4 migration, goal validation |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
 | `selectors.test.ts` | stock levels, restock plan, today's revenue estimate (no stock, enough stock vs the day's actual sales, a small stock, a second barista), forecast never leaks surprises, price preview, hire capacity gain with upgrades, reputation display, chart series, compact labels |
@@ -217,7 +217,7 @@ npm run test:e2e
 | `backup.spec.ts` | export downloads the save; import restores it after a reset; an invalid file is rejected without changes; restoring and going bankrupt again on the same day shows the game-over dialog; keyboard focus stays inside the settings sheet |
 | `loans.spec.ts` | take a loan, installments in reconciled reports, early settlement and its objective; a v2 save migrates on load |
 | `assets.spec.ts` | buying an upgrade shows its depreciation, the report charges it as a non-cash expense with the asset bridge and reconciles, and its book value falls the next day |
-| `branch.spec.ts` | locked until level 3; open a branch, add a barista, restock for both, a reconciled report with the branch's section; the next day its result on the branch screen, closing it and the write-off in that day's report |
+| `branch.spec.ts` | locked until level 3; at level 4 open two branches, add a barista and buy an upgrade at one, restock for all three locations, a reconciled report with each branch's section; the next day the result on the branch screen, closing one branch and the write-off in that day's report |
 | `weekly.spec.ts` | seven days played through the UI: the Friday heads-up, the Saturday goal on the dashboard, before opening, in the replay and in the report; the day-7 report shows the week summary, whose card downloads as an image and copies as text; the weekly list (with goals met) and its summary sheet |
 | `multi-tab-and-dialogs.spec.ts` | second tab follows the first, stale-tab action and manual save never overwrite newer progress, toasts never cover dialog buttons or the sheet's close button, Escape closes only the top dialog |
 
@@ -235,7 +235,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 - **Day flow:** `prep → (open) → closed → next day`. Editing is locked while closed so every transaction belongs to exactly one day's report.
 - **Marketing** is charged when the café opens. If cash is no longer sufficient, the promotion is cancelled and noted in the report.
 - **Objective rewards** are XP and levels, not cash, to keep the financial statements clean.
-- **Branch model:** a branch is a second location of the same business, so it shares the menu, prices, promotion and stock, and its results are part of the business's statements (consolidated, with a branch section). The main café is served first from the shared stock; the restock plan buys for both. Customer service rate, reputation and the replay's customer counts stay per location; revenue goals, weekly totals and shares count the whole business.
+- **Branch model:** a branch is another location of the same business, so it shares the menu, prices and promotion, and its results are part of the business's statements (consolidated, with a section per branch). Stock is bought centrally and sent to each branch at opening, valued at the central store's weighted-average cost, so a transfer moves value between pools without touching profit; each branch's own leftovers carry over and spoil at its own rate. The restock plan buys for every location. Customer service rate, reputation and the replay's customer counts stay per location; revenue goals, weekly totals and shares count the whole business.
 - **Depreciation:** every upgrade uses one straight-line life of 90 closes (game time is compressed, so real useful lives would never show). It starts at the close of the day of purchase. Upgrades bought before this version start depreciating at the first close after the update, so their cost reaches profit exactly once.
 - **Hiring** charges a one-off fee (other expenses). Firing is free but requires confirmation, and the last barista cannot be fired.
 - **Imagery:** the café scene is a lightweight hand-built SVG illustration (morning and evening variants) instead of photographs. This keeps the app small and offline-friendly, and avoids licensing questions.
@@ -245,15 +245,15 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 ## Known limitations
 
 - Saves are local to one browser on one device, and there is no cloud sync. Use Settings → export/import to back up a game or move it to another device. Clearing site data without an exported file erases progress. Playing in two tabs is safe but not simultaneous: the most recent save wins and the other tab follows it.
-- One branch at most, run as a simple unit (no own upgrades, promotions or events except public holidays; it shares the main café's stock and serves after it). There is no staff morale.
+- At most one branch per location, and branches have no promotions or events of their own (only a public holiday changes their footfall). There is no staff morale.
 - Report history keeps the latest 60 days. Lifetime totals are kept in stats.
 - Balance is tuned with a scripted bot over ~45 days and would benefit from playtesting.
 
 ## Recommended next steps
 
 1. Support localisation (English) through a string table.
-2. Let branches have their own upgrades and a morning stock transfer, and allow more than one.
-3. Show the revenue estimate's range (a typical day varies by about ±10%).
+2. Show the revenue estimate's range (a typical day varies by about ±10%).
+3. Let each branch run its own promotion.
 
 ### Note on dependency pinning
 

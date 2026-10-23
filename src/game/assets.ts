@@ -34,9 +34,14 @@ export function totalBookValue(assets: readonly DepreciatingCost[]): number {
   return sumSen(assets.map(bookValue));
 }
 
-/** Book value of everything the café owns: its upgrades and the branch fit-out. */
-export function fixedAssetsBookValue(assets: readonly FixedAsset[], branch: BranchState | null): number {
-  return totalBookValue(assets) + (branch ? bookValue(branch.fitOut) : 0);
+/** A branch's fixed assets: its fit-out and its upgrades. */
+export function branchAssets(branch: BranchState): DepreciatingCost[] {
+  return [branch.fitOut, ...branch.upgrades];
+}
+
+/** Book value of everything the café owns: its upgrades and each branch's fit-out and upgrades. */
+export function fixedAssetsBookValue(assets: readonly FixedAsset[], branches: readonly BranchState[]): number {
+  return totalBookValue(assets) + sumSen(branches.map((b) => totalBookValue(branchAssets(b))));
 }
 
 /** The charge at the next close (0 once fully depreciated). */

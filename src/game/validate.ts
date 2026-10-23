@@ -3,6 +3,7 @@
  * untrusted: it may be truncated, hand-edited or from another version.
  */
 import {
+  BRANCH_LEVELS,
   BRANCH_MAX_BARISTAS,
   CAFE_NAME_MAX_LENGTH,
   GOAL_BASE_DAYS,
@@ -19,6 +20,7 @@ import { OBJECTIVES } from './data/objectives';
 import { PROMOTIONS } from './data/promotions';
 import { UPGRADES } from './data/upgrades';
 import { totalBookValue } from './assets';
+import { BRANCH_UPGRADES } from './data/branchUpgrades';
 import { BRANCH_LOCATIONS } from './data/branches';
 import { goalKindFor } from './goals';
 import { installment, remainingPrincipal } from './loans';
@@ -211,7 +213,9 @@ function validateReport(v: Validator, value: unknown, path: string): void {
   v.arr(r.objectivesCompleted, `${path}.objectivesCompleted`)?.forEach((o, i) =>
     v.oneOf(o, OBJECTIVE_IDS, `${path}.objectivesCompleted[${i}]`),
   );
-  if (r.branch !== null) validateBranchDay(v, r.branch, `${path}.branch`);
+  const branchDays = v.arr(r.branches, `${path}.branches`);
+  branchDays?.forEach((b, i) => validateBranchDay(v, b, `${path}.branches[${i}]`));
+  if (branchDays) checkUniqueLocations(v, branchDays, `${path}.branches`);
   if (r.goal !== null) {
     const goal = validateGoal(v, r.goal, `${path}.goal`);
     if (goal) {
@@ -239,17 +243,23 @@ function validateBranchDay(v: Validator, value: unknown, path: string): void {
   if (!b) return;
   v.oneOf(b.location, Object.keys(BRANCH_LOCATIONS), `${path}.location`);
   v.int(b.baristas, `${path}.baristas`, 1, BRANCH_MAX_BARISTAS);
-  for (const key of ['revenueSen', 'cogsSen', 'wagesSen', 'rentSen', 'utilitiesSen']) v.int(b[key], `${path}.${key}`, 0);
+  for (const key of ['revenueSen', 'cogsSen', 'wagesSen', 'rentSen', 'utilitiesSen', 'spoilageSen']) v.int(b[key], `${path}.${key}`, 0);
   v.int(b.contributionSen, `${path}.contributionSen`);
   validateCustomers(v, b.customers, `${path}.customers`);
   v.arr(b.hourlyRevenueSen, `${path}.hourlyRevenueSen`)?.forEach((h, i) => v.int(h, `${path}.hourlyRevenueSen[${i}]`, 0));
   v.num(b.reputationBefore, `${path}.reputationBefore`, 0, 100);
   v.num(b.reputationAfter, `${path}.reputationAfter`, 0, 100);
-  const parts = [b.revenueSen, b.cogsSen, b.wagesSen, b.rentSen, b.utilitiesSen, b.contributionSen];
+  const parts = [b.revenueSen, b.cogsSen, b.wagesSen, b.rentSen, b.utilitiesSen, b.spoilageSen, b.contributionSen];
   if (parts.every((n) => typeof n === 'number')) {
-    const [revenue, cogs, wages, rent, utilities, contribution] = parts as number[];
-    v.check(contribution === (revenue ?? 0) - (cogs ?? 0) - (wages ?? 0) - (rent ?? 0) - (utilities ?? 0), `${path}.contributionSen: tidak sepadan`);
+    const [revenue = 0, cogs = 0, wages = 0, rent = 0, utilities = 0, spoilage = 0, contribution] = parts as number[];
+    v.check(contribution === revenue - cogs - wages - rent - utilities - spoilage, `${path}.contributionSen: tidak sepadan`);
   }
+}
+
+/** At most one entry per location. */
+function checkUniqueLocations(v: Validator, list: unknown[], path: string): void {
+  const locations = list.map((b) => (typeof b === 'object' && b !== null ? (b as Obj).location : undefined));
+  v.check(new Set(locations).size === locations.length, `${path}: lokasi berulang`);
 }
 
 function validateDepreciatingCost(v: Validator, a: Obj, path: string, day: unknown): void {
@@ -259,17 +269,50 @@ function validateDepreciatingCost(v: Validator, a: Obj, path: string, day: unkno
   v.int(a.chargedDays, `${path}.chargedDays`, 0, typeof a.lifeDays === 'number' ? a.lifeDays : 0);
 }
 
-function validateBranch(v: Validator, s: Obj): void {
-  const b = v.obj(s.branch, 'game.branch');
-  if (!b) return;
-  v.oneOf(b.location, Object.keys(BRANCH_LOCATIONS), 'game.branch.location');
-  v.int(b.openedDay, 'game.branch.openedDay', 1, typeof s.day === 'number' ? s.day : 100_000);
-  v.num(b.reputation, 'game.branch.reputation', 0, 100);
-  v.int(b.baristas, 'game.branch.baristas', 1, BRANCH_MAX_BARISTAS);
-  const fitOut = v.obj(b.fitOut, 'game.branch.fitOut');
-  if (!fitOut) return;
-  validateDepreciatingCost(v, fitOut, 'game.branch.fitOut', s.day);
-  v.check(fitOut.acquiredDay === b.openedDay, 'game.branch.fitOut.acquiredDay: mesti hari cawangan dibuka');
+function validateBranches(v: Validator, s: Obj): void {
+  const list = v.arr(s.branches, 'game.branches');
+  if (!list) return;
+  v.check(list.length <= BRANCH_LEVELS.length, 'game.branches: terlalu banyak cawangan');
+  checkUniqueLocations(v, list, 'game.branches');
+  const day = s.day;
+  list.forEach((value, i) => {
+    const path = `game.branches[${i}]`;
+    const b = v.obj(value, path);
+    if (!b) return;
+    v.oneOf(b.location, Object.keys(BRANCH_LOCATIONS), `${path}.location`);
+    v.int(b.openedDay, `${path}.openedDay`, 1, typeof day === 'number' ? day : 100_000);
+    v.num(b.reputation, `${path}.reputation`, 0, 100);
+    v.int(b.baristas, `${path}.baristas`, 1, BRANCH_MAX_BARISTAS);
+    const fitOut = v.obj(b.fitOut, `${path}.fitOut`);
+    if (fitOut) {
+      validateDepreciatingCost(v, fitOut, `${path}.fitOut`, day);
+      v.check(fitOut.acquiredDay === b.openedDay, `${path}.fitOut.acquiredDay: mesti hari cawangan dibuka`);
+    }
+    const upgrades = v.arr(b.upgrades, `${path}.upgrades`);
+    upgrades?.forEach((u, j) => {
+      const upgrade = v.obj(u, `${path}.upgrades[${j}]`);
+      if (!upgrade) return;
+      v.oneOf(upgrade.id, Object.keys(BRANCH_UPGRADES), `${path}.upgrades[${j}].id`);
+      validateDepreciatingCost(v, upgrade, `${path}.upgrades[${j}]`, day);
+      if (typeof b.openedDay === 'number' && typeof upgrade.acquiredDay === 'number') {
+        v.check(upgrade.acquiredDay >= b.openedDay, `${path}.upgrades[${j}].acquiredDay: sebelum cawangan dibuka`);
+      }
+    });
+    if (upgrades) {
+      const ids = upgrades.map((u) => (typeof u === 'object' && u !== null ? (u as Obj).id : undefined));
+      v.check(new Set(ids).size === ids.length, `${path}.upgrades: pendua`);
+    }
+    const ingredients = v.obj(b.ingredients, `${path}.ingredients`);
+    if (ingredients) {
+      for (const id of INGREDIENT_IDS) {
+        const item = v.obj(ingredients[id], `${path}.ingredients.${id}`);
+        if (!item) continue;
+        v.int(item.stock, `${path}.ingredients.${id}.stock`, 0, MAX_STOCK_PER_INGREDIENT);
+        v.int(item.stockValueSen, `${path}.ingredients.${id}.stockValueSen`, 0);
+        v.check(item.stock !== 0 || item.stockValueSen === 0, `${path}.ingredients.${id}: nilai stok tanpa unit`);
+      }
+    }
+  });
 }
 
 function validateAssets(v: Validator, s: Obj, upgrades: unknown[] | null): void {
@@ -285,10 +328,9 @@ function validateAssets(v: Validator, s: Obj, upgrades: unknown[] | null): void 
   });
   if (v.errors.length > errorsBefore) return;
   const assets = list as FixedAsset[];
-  // The branch fit-out follows the same rules (its own fields were checked with the branch).
-  const branch = typeof s.branch === 'object' && s.branch !== null ? (s.branch as Obj) : null;
-  const fitOut = branch && typeof branch.fitOut === 'object' && branch.fitOut !== null ? (branch.fitOut as DepreciatingCost) : null;
-  const depreciating: DepreciatingCost[] = fitOut && typeof fitOut.chargedDays === 'number' ? [...assets, fitOut] : assets;
+  // Each branch's fit-out and upgrades follow the same rules (their own fields were checked with
+  // the branches).
+  const depreciating: DepreciatingCost[] = [...assets, ...branchDepreciatingCosts(s.branches)];
   if (upgrades) {
     const ids = assets.map((a) => a.upgradeId);
     v.check(ids.length === upgrades.length && ids.every((id, i) => id === upgrades[i]), 'game.assets: tidak sepadan dengan naik taraf');
@@ -300,8 +342,8 @@ function validateAssets(v: Validator, s: Obj, upgrades: unknown[] | null): void 
       'game.assets: susut nilai melebihi hari yang ditutup',
     );
   }
-  // While preparing: the day opened with the assets bought before today, including a branch
-  // closed today (its book value is still to be written off).
+  // While preparing: the day opened with the assets bought before today, including those of a
+  // branch closed today (its book value is still to be written off).
   const dayStart = s.dayStart as Obj | undefined;
   if (s.phase === 'prep' && typeof s.day === 'number' && dayStart && typeof s.pendingWriteOffSen === 'number') {
     const day = s.day;
@@ -310,6 +352,18 @@ function validateAssets(v: Validator, s: Obj, upgrades: unknown[] | null): void 
       'game.dayStart.assetsSen: tidak sepadan dengan nilai buku aset',
     );
   }
+}
+
+/** Every branch's fit-out and upgrades, skipping anything malformed (reported elsewhere). */
+function branchDepreciatingCosts(value: unknown): DepreciatingCost[] {
+  if (!Array.isArray(value)) return [];
+  const isCost = (a: unknown): a is DepreciatingCost =>
+    typeof a === 'object' && a !== null && ['costSen', 'lifeDays', 'acquiredDay', 'chargedDays'].every((k) => typeof (a as Obj)[k] === 'number');
+  return value.flatMap((b) => {
+    if (typeof b !== 'object' || b === null) return [];
+    const branch = b as Obj;
+    return [branch.fitOut, ...(Array.isArray(branch.upgrades) ? branch.upgrades : [])].filter(isCost);
+  });
 }
 
 /**
@@ -486,7 +540,7 @@ export function validateGameState(value: unknown): ValidationResult {
   }
 
   if (s.loan !== null) validateLoan(v, s.loan, s);
-  if (s.branch !== null) validateBranch(v, s);
+  validateBranches(v, s);
   v.int(s.pendingWriteOffSen, 'game.pendingWriteOffSen', 0);
   // A write-off is taken at the close of the day the branch was closed.
   v.check(s.phase === 'prep' || s.pendingWriteOffSen === 0, 'game.pendingWriteOffSen: mesti sifar selepas kafe ditutup');

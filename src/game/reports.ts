@@ -163,9 +163,9 @@ export function cashFlowSummary(report: DayReport): CashFlowSummary {
   };
 }
 
-/** Customers served across the business that day (the main café and the branch). */
+/** Customers served across the business that day (the main café and its branches). */
 export function servedTotal(report: DayReport): number {
-  return report.customers.served + (report.branch?.customers.served ?? 0);
+  return report.customers.served + report.branches.reduce((n, b) => n + b.customers.served, 0);
 }
 
 /** Plain-text summary for sharing. Clearly labelled as simulated game data. */
@@ -203,7 +203,7 @@ export function historySeries(history: readonly DayReport[], count: number): His
   }));
 }
 
-/** Running totals by hour for the live day playback (the main café's, plus the branch's revenue). */
+/** Running totals by hour for the live day playback (the main café's, plus the branches' revenue). */
 export function cumulativeByHour(
   report: DayReport,
 ): { hour: number; served: number; revenueSen: number; lost: number; branchRevenueSen: number }[] {
@@ -215,7 +215,7 @@ export function cumulativeByHour(
     served += h.served;
     revenueSen += h.revenueSen;
     lost += h.lostCapacity + h.lostStock + h.lostPrice + h.lostClosed;
-    branchRevenueSen += report.branch?.hourlyRevenueSen[i] ?? 0;
+    branchRevenueSen += report.branches.reduce((n, b) => n + (b.hourlyRevenueSen[i] ?? 0), 0);
     return { hour: h.hour, served, revenueSen, lost, branchRevenueSen };
   });
 }
@@ -288,7 +288,7 @@ function summarizeWeek(week: number, days: readonly DayReport[], latestDay: numb
   const first = days[0] as DayReport;
   const last = days[days.length - 1] as DayReport;
   const total = (pick: (r: DayReport) => number): number => sumSen(days.map(pick));
-  // Customers served at the main café and the branch; the service rate is the main café's.
+  // Customers served at the main café and the branches; the service rate is the main café's.
   const served = days.reduce((n, r) => n + servedTotal(r), 0);
   const mainServed = days.reduce((n, r) => n + r.customers.served, 0);
   const willing = days.reduce((n, r) => n + r.customers.served + r.customers.lostCapacity + r.customers.lostStock + r.customers.lostClosed, 0);
@@ -318,7 +318,7 @@ function summarizeWeek(week: number, days: readonly DayReport[], latestDay: numb
     openingCashSen: first.openingCashSen,
     closingCashSen: last.closingCashSen,
     served,
-    arrivals: days.reduce((n, r) => n + r.customers.arrivals + (r.branch?.customers.arrivals ?? 0), 0),
+    arrivals: days.reduce((n, r) => n + r.customers.arrivals + r.branches.reduce((m, b) => m + b.customers.arrivals, 0), 0),
     serviceRate: willing === 0 ? 1 : mainServed / willing,
     profitableDays: days.filter((r) => r.netProfitSen > 0).length,
     bestDay: { day: best.day, revenueSen: best.revenueSen },

@@ -4,7 +4,7 @@ export const SAVE_KEY = 'rlt-cafe-empire/save';
 export const BACKUP_KEY = 'rlt-cafe-empire/save-rosak';
 export const COPIES_KEY = 'rlt-cafe-empire/salinan';
 /** The save schema version this build writes. */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /** Minimal shape of the stored save used by assertions. */
 export interface StoredSave {
@@ -25,6 +25,7 @@ export interface StoredSave {
     stats: { negativeCashStreak: number };
     products: Record<string, { priceSen: number; enabled: boolean }>;
     ingredients: Record<string, { stock: number; stockValueSen: number; unitCostSen: number }>;
+    branches: { location: string }[];
   };
 }
 

@@ -2,7 +2,7 @@
  * Read-only views over the game state for the UI. Every number the UI shows
  * (margins, estimates, quotes, capacity) comes from here or the engine.
  */
-import { BRANCH_MIN_LEVEL, HOUR_WEIGHTS, MAX_PURCHASE_QTY, MAX_STOCK_PER_INGREDIENT } from './constants';
+import { HOUR_WEIGHTS, MAX_PURCHASE_QTY, MAX_STOCK_PER_INGREDIENT } from './constants';
 import { BRANCH_LOCATION_ORDER, BRANCH_LOCATIONS, type BranchLocationDef } from './data/branches';
 import { EVENTS } from './data/events';
 import { INGREDIENTS } from './data/ingredients';
@@ -24,8 +24,18 @@ import {
   spoilageRate,
   todaysUnitCost,
 } from './economy';
-import { bookValue, fixedAssetsBookValue, newAsset, nextCharge } from './assets';
-import { branchEstimate, branchFixedCosts, branchHourlyCapacity, newBranch } from './branch';
+import { bookValue, branchAssets, fixedAssetsBookValue, newAsset, nextCharge, totalBookValue } from './assets';
+import {
+  branchEstimate,
+  branchFixedCosts,
+  branchHourlyCapacity,
+  branchSupplyNeeds,
+  newBranch,
+  newBranchUpgrade,
+  nextBranchLevel,
+  planMorningTransfers,
+} from './branch';
+import { BRANCH_UPGRADE_ORDER, BRANCH_UPGRADES, type BranchUpgradeDef } from './data/branchUpgrades';
 import { isEventVisibleInPrep, resolveEvent } from './events';
 import { GOAL_TITLE, goalRaisePercent } from './goals';
 import { installment, offerTotalInterest, remainingPrincipal, settlementQuote, type Installment, type SettlementQuote } from './loans';
@@ -120,17 +130,32 @@ function recipeItems(productId: ProductId): RecipeItem[] {
   }));
 }
 
-/** Units of each ingredient today's estimated sales would use, at the main café and the branch. */
-function ingredientNeeds(state: GameState): Record<IngredientId, number> {
+/** Units of each ingredient the main café's estimated sales would use today. */
+function mainNeeds(state: GameState): Record<IngredientId, number> {
   const estimate = dayEstimate(state);
-  const branch = branchEstimate(state);
   const need = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, 0])) as Record<IngredientId, number>;
   for (const productId of PRODUCT_IDS) {
     if (!state.products[productId].enabled) continue;
-    const units = estimate.perProduct[productId] + (branch?.perProduct[productId] ?? 0);
-    for (const [id, qty] of recipeOf(productId)) need[id] += units * qty;
+    for (const [id, qty] of recipeOf(productId)) need[id] += estimate.perProduct[productId] * qty;
   }
   return need;
+}
+
+/** What branches will take from the central store this morning, per ingredient. */
+function branchShortfalls(state: GameState): Record<IngredientId, number> {
+  const total = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, 0])) as Record<IngredientId, number>;
+  for (const branch of state.branches) {
+    const needs = branchSupplyNeeds(state, branch);
+    for (const id of INGREDIENT_IDS) total[id] += needs[id].shortfall;
+  }
+  return total;
+}
+
+/** Units the central store must cover today: the main café's estimated use and the branches' deliveries. */
+function ingredientNeeds(state: GameState): Record<IngredientId, number> {
+  const main = mainNeeds(state);
+  const branches = branchShortfalls(state);
+  return Object.fromEntries(INGREDIENT_IDS.map((id) => [id, main[id] + branches[id]])) as Record<IngredientId, number>;
 }
 
 export function productViews(state: GameState): ProductView[] {
@@ -169,6 +194,8 @@ export function productViews(state: GameState): ProductView[] {
 
 export function ingredientViews(state: GameState): IngredientView[] {
   const need = ingredientNeeds(state);
+  const main = mainNeeds(state);
+  const toBranches = branchShortfalls(state);
   return INGREDIENT_IDS.map((id) => {
     const item = state.ingredients[id];
     const def = INGREDIENTS[id];
@@ -176,12 +203,12 @@ export function ingredientViews(state: GameState): IngredientView[] {
     const users = PRODUCT_IDS.filter((p) => state.products[p].enabled && (PRODUCTS[p].recipe[id] ?? 0) > 0);
     const minUse = Math.min(...users.map((p) => PRODUCTS[p].recipe[id] ?? 0));
     let stockLevel: StockLevel = 'ok';
-    if (users.length === 0) stockLevel = 'off';
+    if (users.length === 0 && toBranches[id] === 0) stockLevel = 'off';
     else if (item.stock < minUse) stockLevel = 'out';
     else if (item.stock < need[id]) stockLevel = 'low';
     const rate = spoilageRate(id, state.upgrades);
-    // Perishables get a smaller safety buffer.
-    const target = Math.ceil((need[id] * (rate >= 0.2 ? 1.0 : 1.15)) / 5) * 5;
+    // Perishables get a smaller safety buffer (branch deliveries already include theirs).
+    const target = Math.ceil((main[id] * (rate >= 0.2 ? 1.0 : 1.15)) / 5) * 5 + toBranches[id];
     const room = MAX_STOCK_PER_INGREDIENT - item.stock;
     return {
       id,
@@ -195,7 +222,7 @@ export function ingredientViews(state: GameState): IngredientView[] {
       surchargeBps,
       estimatedNeed: need[id],
       stockLevel,
-      suggestedPurchase: users.length > 0 ? Math.max(0, Math.min(target - item.stock, room)) : 0,
+      suggestedPurchase: users.length > 0 || toBranches[id] > 0 ? Math.max(0, Math.min(target - item.stock, room)) : 0,
       maxPurchase: Math.max(0, Math.min(MAX_PURCHASE_QTY, room)),
       spoilageRate: rate,
       usedBy: PRODUCT_IDS.filter((p) => (PRODUCTS[p].recipe[id] ?? 0) > 0).map((p) => ({
@@ -282,12 +309,16 @@ export function upgradeViews(state: GameState): UpgradeView[] {
   });
 }
 
-/** Book value of the café's fixed assets now (upgrades and the branch fit-out). */
+/** Book value of the café's fixed assets now (upgrades and each branch's fit-out and upgrades). */
 export function fixedAssetsValue(state: GameState): number {
-  return fixedAssetsBookValue(state.assets, state.branch);
+  return fixedAssetsBookValue(state.assets, state.branches);
 }
 
 export interface BranchLocationView extends BranchLocationDef {
+  /** A branch is already open here. */
+  open: boolean;
+  /** The café level the next branch needs (null when every location is taken). */
+  requiredLevel: number | null;
   locked: boolean;
   affordable: boolean;
   /** Depreciation of the fit-out at each close, and the closes it lasts. */
@@ -299,19 +330,43 @@ export interface BranchLocationView extends BranchLocationDef {
 
 export function branchLocationViews(state: GameState): BranchLocationView[] {
   const level = currentLevel(state);
+  const requiredLevel = nextBranchLevel(state);
   return BRANCH_LOCATION_ORDER.map((id) => {
     const def = BRANCH_LOCATIONS[id];
     const probe = newBranch(id, state.day);
     const fixed = branchFixedCosts(probe);
     return {
       ...def,
-      locked: level < BRANCH_MIN_LEVEL,
+      open: state.branches.some((b) => b.location === id),
+      requiredLevel,
+      locked: requiredLevel === null || level < requiredLevel,
       affordable: def.setupCostSen <= state.cashSen,
       dailyDepreciationSen: nextCharge(probe.fitOut),
       lifeDays: probe.fitOut.lifeDays,
       dailyFixedSen: fixed.wagesSen + fixed.rentSen + fixed.utilitiesBaseSen,
     };
   });
+}
+
+export interface BranchUpgradeView extends BranchUpgradeDef {
+  owned: boolean;
+  affordable: boolean;
+  dailyDepreciationSen: number;
+  lifeDays: number;
+  bookValueSen: number | null;
+}
+
+export interface BranchStockLine {
+  ingredientId: IngredientId;
+  name: string;
+  unitLabel: string;
+  stock: number;
+  /** Today's estimated use at the branch. */
+  need: number;
+  /** Units it will receive from the central store when the café opens. */
+  delivery: number;
+  /** Units it needs but the central store cannot send. */
+  missing: number;
 }
 
 export interface BranchView {
@@ -323,32 +378,60 @@ export interface BranchView {
   /** Today's estimate (prep) from what the player can see. */
   estimatedFootfall: number;
   fixed: { wagesSen: number; rentSen: number; utilitiesBaseSen: number };
+  /** Book value of its fit-out and upgrades. */
   bookValueSen: number;
   dailyDepreciationSen: number;
   daysLeft: number;
+  upgrades: BranchUpgradeView[];
+  stock: BranchStockLine[];
   /** The branch's day in the latest report, if it traded that day. */
   lastResult: (BranchDayResult & { day: number }) | null;
 }
 
-export function branchView(state: GameState): BranchView | null {
-  const branch = state.branch;
-  if (!branch) return null;
-  const est = branchEstimate(state);
-  const perHour = branchHourlyCapacity(branch);
+export function branchViews(state: GameState): BranchView[] {
   const report = lastReport(state);
-  return {
-    def: BRANCH_LOCATIONS[branch.location],
-    branch,
-    openedToday: branch.openedDay === state.day,
-    capacityPerHour: perHour,
-    capacityPerDay: perHour * openHours().length,
-    estimatedFootfall: est?.footfall ?? 0,
-    fixed: branchFixedCosts(branch),
-    bookValueSen: bookValue(branch.fitOut),
-    dailyDepreciationSen: nextCharge(branch.fitOut),
-    daysLeft: branch.fitOut.lifeDays - branch.fitOut.chargedDays,
-    lastResult: report?.branch && report.day >= branch.openedDay ? { ...report.branch, day: report.day } : null,
-  };
+  const { transfers } = planMorningTransfers(state);
+  return state.branches.map((branch) => {
+    const est = branchEstimate(state, branch);
+    const perHour = branchHourlyCapacity(branch);
+    const needs = branchSupplyNeeds(state, branch);
+    const delivery = transfers.find((t) => t.location === branch.location)?.units;
+    const result = report?.branches.find((b) => b.location === branch.location);
+    return {
+      def: BRANCH_LOCATIONS[branch.location],
+      branch,
+      openedToday: branch.openedDay === state.day,
+      capacityPerHour: perHour,
+      capacityPerDay: perHour * openHours().length,
+      estimatedFootfall: est.footfall,
+      fixed: branchFixedCosts(branch),
+      bookValueSen: totalBookValue(branchAssets(branch)),
+      dailyDepreciationSen: sumSen(branchAssets(branch).map(nextCharge)),
+      daysLeft: branch.fitOut.lifeDays - branch.fitOut.chargedDays,
+      upgrades: BRANCH_UPGRADE_ORDER.map((id) => {
+        const owned = branch.upgrades.find((u) => u.id === id);
+        const probe = owned ?? newBranchUpgrade(id, state.day);
+        return {
+          ...BRANCH_UPGRADES[id],
+          owned: !!owned,
+          affordable: BRANCH_UPGRADES[id].costSen <= state.cashSen,
+          dailyDepreciationSen: nextCharge(probe),
+          lifeDays: probe.lifeDays,
+          bookValueSen: owned ? bookValue(owned) : null,
+        };
+      }),
+      stock: INGREDIENT_IDS.filter((id) => needs[id].need > 0 || branch.ingredients[id].stock > 0).map((id) => ({
+        ingredientId: id,
+        name: INGREDIENTS[id].name,
+        unitLabel: INGREDIENTS[id].unitLabel,
+        stock: branch.ingredients[id].stock,
+        need: needs[id].need,
+        delivery: delivery?.[id] ?? 0,
+        missing: needs[id].shortfall - (delivery?.[id] ?? 0),
+      })),
+      lastResult: result && report && report.day >= branch.openedDay ? { ...result, day: report.day } : null,
+    };
+  });
 }
 
 export interface ObjectiveView {
@@ -430,32 +513,36 @@ function capacityShare(perProduct: Record<ProductId, number>, perHour: number): 
  */
 export function revenueEstimate(state: GameState): RevenueEstimate {
   const price = Object.fromEntries(productViews(state).map((v) => [v.id, v.salePriceSen])) as Record<ProductId, number>;
-  const locations: { perProduct: Record<ProductId, number>; perHour: number }[] = [
-    { perProduct: dayEstimate(state).perProduct, perHour: capacityView(state).perHour },
+  // Each location sells from its own stock: branches after this morning's deliveries, the main
+  // café from what the central store has left.
+  const { transfers, centralLeft } = planMorningTransfers(state);
+  const locations: { perProduct: Record<ProductId, number>; perHour: number; stock: Record<IngredientId, number> }[] = [
+    { perProduct: dayEstimate(state).perProduct, perHour: capacityView(state).perHour, stock: centralLeft },
+    ...state.branches.map((b) => {
+      const delivered = transfers.find((t) => t.location === b.location)?.units;
+      return {
+        perProduct: branchEstimate(state, b).perProduct,
+        perHour: branchHourlyCapacity(b),
+        stock: Object.fromEntries(INGREDIENT_IDS.map((id) => [id, b.ingredients[id].stock + (delivered?.[id] ?? 0)])) as Record<IngredientId, number>,
+      };
+    }),
   ];
-  const branch = branchEstimate(state);
-  if (state.branch && branch) locations.push({ perProduct: branch.perProduct, perHour: branchHourlyCapacity(state.branch) });
   const enabled = PRODUCT_IDS.filter((id) => state.products[id].enabled);
 
   let demand = 0;
   let afterCapacity = 0;
-  const served = locations.map(({ perProduct, perHour }) => {
-    const share = capacityShare(perProduct, perHour);
-    return Object.fromEntries(
-      enabled.map((id) => {
-        demand += perProduct[id] * price[id];
-        afterCapacity += perProduct[id] * share * price[id];
-        return [id, perProduct[id] * share];
-      }),
-    ) as Partial<Record<ProductId, number>>;
-  });
-  // The locations draw on one stock.
-  const need = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, 0])) as Record<IngredientId, number>;
-  for (const units of served) for (const id of enabled) for (const [ing, qty] of recipeOf(id)) need[ing] += (units[id] ?? 0) * qty;
-  const ratio = (ing: IngredientId): number => (need[ing] <= 0 ? 1 : Math.min(1, state.ingredients[ing].stock / need[ing]));
   let expected = 0;
-  for (const units of served) {
-    for (const id of enabled) expected += (units[id] ?? 0) * Math.min(...recipeOf(id).map(([ing]) => ratio(ing))) * price[id];
+  for (const { perProduct, perHour, stock } of locations) {
+    const share = capacityShare(perProduct, perHour);
+    const need = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, 0])) as Record<IngredientId, number>;
+    for (const id of enabled) {
+      demand += perProduct[id] * price[id];
+      afterCapacity += perProduct[id] * share * price[id];
+      for (const [ing, qty] of recipeOf(id)) need[ing] += perProduct[id] * share * qty;
+    }
+    // Products sharing an ingredient that falls short are cut alike.
+    const ratio = (ing: IngredientId): number => (need[ing] <= 0 ? 1 : Math.min(1, stock[ing] / need[ing]));
+    for (const id of enabled) expected += perProduct[id] * share * Math.min(...recipeOf(id).map(([ing]) => ratio(ing))) * price[id];
   }
 
   const capacityLoss = demand - afterCapacity;
@@ -533,16 +620,21 @@ export function prepChecklist(state: GameState): PrepChecklistItem[] {
     status: est.footfall > cap.perDay ? 'warn' : 'ok',
   });
 
-  const branch = branchView(state);
-  if (branch) {
+  for (const branch of branchViews(state)) {
+    const missing = branch.stock.filter((l) => l.missing > 0);
+    const overCapacity = branch.estimatedFootfall > branch.capacityPerDay;
     items.push({
-      id: 'branch',
+      id: `branch-${branch.branch.location}`,
       label: `Cawangan ${branch.def.shortName}: ${branch.branch.baristas} barista`,
-      detail:
-        branch.estimatedFootfall > branch.capacityPerDay
+      detail: [
+        overCapacity
           ? `Anggaran ${branch.estimatedFootfall} pelanggan melebihi kapasiti ${branch.capacityPerDay} sehari.`
-          : `Anggaran ${branch.estimatedFootfall} pelanggan, kapasiti ${branch.capacityPerDay} sehari. Bahan diambil daripada stor yang sama.`,
-      status: branch.estimatedFootfall > branch.capacityPerDay ? 'warn' : 'ok',
+          : `Anggaran ${branch.estimatedFootfall} pelanggan, kapasiti ${branch.capacityPerDay} sehari.`,
+        missing.length > 0
+          ? `Stor pusat tidak cukup untuk dihantar: ${missing.map((l) => l.name).join(', ')}.`
+          : 'Bahan dihantar daripada stor pusat semasa kafe dibuka.',
+      ].join(' '),
+      status: missing.length > 0 || overCapacity ? 'warn' : 'ok',
     });
   }
 

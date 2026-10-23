@@ -288,10 +288,10 @@ export interface DayReport {
   /** Stock movements per ingredient (null on reports from before ingredient stock). */
   ingredients: IngredientDayLine[] | null;
   /**
-   * The branch's day, already included in the report's totals (revenue, COGS, expenses, product
-   * lines and transactions). `customers` and `hourly` above are the main café's only.
+   * Each branch's day, already included in the report's totals (revenue, COGS, expenses, product
+   * and ingredient lines, transactions). `customers` and `hourly` above are the main café's only.
    */
-  branch: BranchDayResult | null;
+  branches: BranchDayResult[];
 }
 
 export type BranchLocationId = 'kampus' | 'pejabat' | 'mall';
@@ -304,7 +304,9 @@ export interface BranchDayResult {
   wagesSen: number;
   rentSen: number;
   utilitiesSen: number;
-  /** Revenue − COGS − wages − rent − utilities (before depreciation of its fit-out). */
+  /** Write-off of its own perishable stock overnight. */
+  spoilageSen: number;
+  /** Revenue − COGS − wages − rent − utilities − spoilage (before depreciation). */
   contributionSen: number;
   customers: CustomerSummary;
   /** Revenue in each opening hour (for the replay). */
@@ -392,9 +394,12 @@ export interface GameState {
   goal: DayGoal | null;
   /** Fixed assets: one per upgrade owned, in the order bought. */
   assets: FixedAsset[];
-  /** The second branch, if one is open. It shares the menu, prices, promotion and ingredient stock. */
-  branch: BranchState | null;
-  /** Book value of a branch closed during today's preparation, written off at today's close. */
+  /**
+   * Open branches (at most one per location). They share the menu, prices and promotion, and sell
+   * from their own ingredient stock, sent from the central store.
+   */
+  branches: BranchState[];
+  /** Book value of branches closed during today's preparation, written off at today's close. */
   pendingWriteOffSen: number;
 }
 
@@ -406,6 +411,21 @@ export interface BranchState {
   baristas: number;
   /** The fit-out, depreciated like an upgrade. */
   fitOut: DepreciatingCost;
+  /** Upgrades bought for this branch, in the order bought. */
+  upgrades: BranchUpgradeAsset[];
+  /** The branch's own stock, sent from the central store (at its weighted-average cost). */
+  ingredients: Record<IngredientId, StockHolding>;
+}
+
+export type BranchUpgradeId = 'mesin' | 'papan' | 'peti';
+
+export interface BranchUpgradeAsset extends DepreciatingCost {
+  id: BranchUpgradeId;
+}
+
+export interface StockHolding {
+  stock: number;
+  stockValueSen: number;
 }
 
 /** A cost carried as a fixed asset and depreciated straight-line, one charge at each close. */
@@ -456,7 +476,8 @@ export type EngineErrorCode =
   | 'LOAN_ACTIVE'
   | 'NO_LOAN'
   | 'BRANCH_EXISTS'
-  | 'NO_BRANCH';
+  | 'NO_BRANCH'
+  | 'INSUFFICIENT_STOCK';
 
 export type EngineResult =
   | { ok: true; state: GameState; message: string; report?: DayReport; newObjectives?: ObjectiveId[] }

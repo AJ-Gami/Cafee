@@ -37,6 +37,7 @@ import type {
   ProductId,
   ProductState,
   StaffMember,
+  StockHolding,
   TimelineEntry,
   UpgradeId,
 } from './types';
@@ -240,12 +241,13 @@ export function estimateDemand(
 // Day simulation
 // ---------------------------------------------------------------------------
 
-export interface SimulationInput {
+export interface SimulationInput<T extends StockHolding = IngredientState> {
   day: number;
   reputation: number;
   /** Prices and menu (stock is held per ingredient). */
   products: Record<ProductId, ProductState>;
-  ingredients: Record<IngredientId, IngredientState>;
+  /** The stock this location sells from. */
+  ingredients: Record<IngredientId, T>;
   baseHourlyCapacity: number;
   mods: DemandModifiers;
   extraOrders?: { hour: number; items: Partial<Record<ProductId, number>> };
@@ -260,8 +262,8 @@ export interface ProductSimLine {
   salePriceSen: number;
 }
 
-export interface SimulationOutput {
-  ingredients: Record<IngredientId, IngredientState>;
+export interface SimulationOutput<T extends StockHolding = IngredientState> {
+  ingredients: Record<IngredientId, T>;
   /** Ingredient units used by the products sold, and their carrying value (the day's COGS). */
   used: Record<IngredientId, { units: number; valueSen: number }>;
   lines: Record<ProductId, ProductSimLine>;
@@ -273,10 +275,10 @@ export interface SimulationOutput {
   extraOrder: { requested: number; fulfilled: number } | null;
 }
 
-export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput {
+export function simulateDay<T extends StockHolding>(input: SimulationInput<T>, rng: Rng): SimulationOutput<T> {
   const { mods, products } = input;
   const ingredients = { ...input.ingredients };
-  const used = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, { units: 0, valueSen: 0 }])) as SimulationOutput['used'];
+  const used = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, { units: 0, valueSen: 0 }])) as SimulationOutput<T>['used'];
   const canMake = (id: ProductId): boolean => missingIngredient(ingredients, id) === null;
   const lines = Object.fromEntries(
     PRODUCT_IDS.map((id) => [
@@ -290,7 +292,7 @@ export function simulateDay(input: SimulationInput, rng: Rng): SimulationOutput 
   const drinks = enabled.filter((id) => PRODUCTS[id].kind !== 'food');
   const addOns = enabled.filter((id) => PRODUCTS[id].addOnRate > 0);
   const soldOutAnnounced = new Set<ProductId>();
-  let extraOrder: SimulationOutput['extraOrder'] = null;
+  let extraOrder: SimulationOutput<T>['extraOrder'] = null;
 
   const ingredientName = (id: IngredientId): string => INGREDIENTS[id].name.toLowerCase();
   for (const id of enabled) {

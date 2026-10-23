@@ -4,7 +4,6 @@
  */
 import {
   BANKRUPTCY_NEGATIVE_DAYS,
-  BRANCH_MIN_LEVEL,
   BRANCH_MAX_BARISTAS,
   CAFE_NAME_MAX_LENGTH,
   DEFAULT_CAFE_NAME,
@@ -17,7 +16,8 @@ import {
   STARTING_CASH_SEN,
   STARTING_REPUTATION,
 } from './constants';
-import { BRANCH_LOCATIONS } from './data/branches';
+import { BRANCH_UPGRADES } from './data/branchUpgrades';
+import { BRANCH_LOCATION_ORDER, BRANCH_LOCATIONS } from './data/branches';
 import { INGREDIENTS } from './data/ingredients';
 import { PRODUCTS } from './data/products';
 import { PROMOTIONS } from './data/promotions';
@@ -33,9 +33,21 @@ import {
   quotePurchase,
   spoilageRate,
   takeFromStock,
+  totalInventoryValue,
 } from './economy';
-import { bookValue, depreciateAtClose, depreciateOne, fixedAssetsBookValue, newAsset } from './assets';
-import { branchFixedCosts, branchHourlyCapacity, branchModifiers, branchUtilities, newBranch } from './branch';
+import { branchAssets, depreciateAtClose, depreciateOne, fixedAssetsBookValue, newAsset, totalBookValue } from './assets';
+import {
+  branchFixedCosts,
+  branchHourlyCapacity,
+  branchModifiers,
+  branchSpoilageRate,
+  branchSupplyNeeds,
+  branchUtilities,
+  newBranch,
+  newBranchUpgrade,
+  nextBranchLevel,
+  planMorningTransfers,
+} from './branch';
 import { resolveEvent, rollEventForDay, type ResolvedEvent } from './events';
 import { dayGoalFor, GOAL_TITLE, goalResult, isSunday } from './goals';
 import { applyBps, formatRM, sumSen } from './money';
@@ -47,6 +59,8 @@ import { baristaCount, candidatesForState, hourlyCapacity, staffSlots } from './
 import type {
   BranchDayResult,
   BranchLocationId,
+  BranchState,
+  BranchUpgradeId,
   CustomerSummary,
   DayReport,
   EngineErrorCode,
@@ -211,7 +225,7 @@ export function createNewGame(seed: number, cafeName: string = DEFAULT_CAFE_NAME
     // Day 1 is a Monday with no earlier days to set a goal from.
     goal: null,
     assets: [],
-    branch: null,
+    branches: [],
     pendingWriteOffSen: 0,
   };
 }
@@ -440,51 +454,100 @@ function isBranchLocationId(value: unknown): value is BranchLocationId {
   return typeof value === 'string' && value in BRANCH_LOCATIONS;
 }
 
-/** Open the second branch at `location`. It trades from today's opening. */
+function findBranch(state: GameState, location: BranchLocationId): BranchState | undefined {
+  return state.branches.find((b) => b.location === location);
+}
+
+function withBranch(state: GameState, branch: BranchState): GameState {
+  return { ...state, branches: state.branches.map((b) => (b.location === branch.location ? branch : b)) };
+}
+
+/** Open a branch at `location`. It trades from today's opening. */
 export function openBranch(state: GameState, location: BranchLocationId): EngineResult {
   const blocked = guardPrep(state);
   if (blocked) return blocked;
   if (!isBranchLocationId(location)) return fail('UNKNOWN_ITEM', 'Lokasi tidak dikenali.');
-  if (state.branch) return fail('BRANCH_EXISTS', 'Anda sudah mempunyai cawangan. Tutup cawangan semasa dahulu.');
-  if (currentLevel(state) < BRANCH_MIN_LEVEL) return fail('LOCKED', `Cawangan dibuka pada Tahap ${BRANCH_MIN_LEVEL}.`);
+  if (findBranch(state, location)) return fail('BRANCH_EXISTS', 'Sudah ada cawangan di lokasi ini.');
+  const required = nextBranchLevel(state);
+  if (required === null) return fail('BRANCH_EXISTS', 'Semua lokasi sudah mempunyai cawangan.');
+  if (currentLevel(state) < required) return fail('LOCKED', `Cawangan ke-${state.branches.length + 1} dibuka pada Tahap ${required}.`);
   const def = BRANCH_LOCATIONS[location];
   if (def.setupCostSen > state.cashSen) return insufficient(def.setupCostSen, state.cashSen);
-  let next: GameState = { ...state, branch: newBranch(location, state.day) };
+  let next: GameState = { ...state, branches: [...state.branches, newBranch(location, state.day)] };
   next = withTransaction(next, 'branch_setup', -def.setupCostSen, `Buka cawangan: ${def.name}`);
   return succeed(next, `Cawangan ${def.shortName} dibuka! Ia mula berniaga apabila kafe dibuka hari ini.`);
 }
 
-export function setBranchBaristas(state: GameState, baristas: number): EngineResult {
+export function setBranchBaristas(state: GameState, location: BranchLocationId, baristas: number): EngineResult {
   const blocked = guardPrep(state);
   if (blocked) return blocked;
-  if (!state.branch) return fail('NO_BRANCH', 'Tiada cawangan.');
+  const branch = findBranch(state, location);
+  if (!branch) return fail('NO_BRANCH', 'Tiada cawangan di lokasi ini.');
   if (!Number.isInteger(baristas) || baristas < 1 || baristas > BRANCH_MAX_BARISTAS) {
     return fail('INVALID_QUANTITY', `Cawangan memerlukan 1 hingga ${BRANCH_MAX_BARISTAS} barista.`);
   }
-  if (baristas === state.branch.baristas) return fail('NO_CHANGE', 'Tiada perubahan.');
-  return succeed({ ...state, branch: { ...state.branch, baristas } }, `Cawangan kini mempunyai ${baristas} barista.`);
+  if (baristas === branch.baristas) return fail('NO_CHANGE', 'Tiada perubahan.');
+  return succeed(
+    withBranch(state, { ...branch, baristas }),
+    `Cawangan ${BRANCH_LOCATIONS[location].shortName} kini mempunyai ${baristas} barista.`,
+  );
+}
+
+function isBranchUpgradeId(value: unknown): value is BranchUpgradeId {
+  return typeof value === 'string' && value in BRANCH_UPGRADES;
+}
+
+/** Buy an upgrade for one branch: capital spending, depreciated like the café's own upgrades. */
+export function buyBranchUpgrade(state: GameState, location: BranchLocationId, upgradeId: BranchUpgradeId): EngineResult {
+  const blocked = guardPrep(state);
+  if (blocked) return blocked;
+  const branch = findBranch(state, location);
+  if (!branch) return fail('NO_BRANCH', 'Tiada cawangan di lokasi ini.');
+  if (!isBranchUpgradeId(upgradeId)) return fail('UNKNOWN_ITEM', 'Naik taraf tidak dikenali.');
+  if (branch.upgrades.some((u) => u.id === upgradeId)) return fail('ALREADY_OWNED', 'Cawangan ini sudah memiliki naik taraf ini.');
+  const def = BRANCH_UPGRADES[upgradeId];
+  if (def.costSen > state.cashSen) return insufficient(def.costSen, state.cashSen);
+  const short = BRANCH_LOCATIONS[location].shortName;
+  let next = withBranch(state, { ...branch, upgrades: [...branch.upgrades, newBranchUpgrade(upgradeId, state.day)] });
+  next = withTransaction(next, 'upgrade', -def.costSen, `Naik taraf cawangan ${short}: ${def.name}`);
+  return succeed(next, `${def.name} dipasang di cawangan ${short}.`);
 }
 
 /**
- * Close the branch. On the day it opened this cancels the opening and refunds its fit-out;
- * later, its remaining book value is written off at today's close.
+ * Close a branch. Its stock goes back to the central store. Its fit-out and upgrades bought today
+ * are refunded (the whole opening is cancelled on the day it opened); the book value of the rest
+ * is written off at today's close.
  */
-export function closeBranch(state: GameState): EngineResult {
+export function closeBranch(state: GameState, location: BranchLocationId): EngineResult {
   const blocked = guardPrep(state);
   if (blocked) return blocked;
-  const branch = state.branch;
-  if (!branch) return fail('NO_BRANCH', 'Tiada cawangan.');
-  const def = BRANCH_LOCATIONS[branch.location];
-  if (branch.openedDay === state.day) {
-    let next: GameState = { ...state, branch: null };
-    next = withTransaction(next, 'branch_setup', branch.fitOut.costSen, `Batal buka cawangan: ${def.name}`);
-    return succeed(next, `Pembukaan cawangan ${def.shortName} dibatalkan. ${formatRM(branch.fitOut.costSen)} dikembalikan.`);
+  const branch = findBranch(state, location);
+  if (!branch) return fail('NO_BRANCH', 'Tiada cawangan di lokasi ini.');
+  const def = BRANCH_LOCATIONS[location];
+  const ingredients = { ...state.ingredients };
+  for (const id of INGREDIENT_IDS) {
+    const held = branch.ingredients[id];
+    if (held.stock > 0) ingredients[id] = addToStock(ingredients[id], held.stock, held.stockValueSen);
   }
-  const writeOffSen = bookValue(branch.fitOut);
-  return succeed(
-    { ...state, branch: null, pendingWriteOffSen: state.pendingWriteOffSen + writeOffSen },
-    `Cawangan ${def.shortName} ditutup. Baki nilai bukunya (${formatRM(writeOffSen)}) dihapus kira semasa kafe ditutup hari ini.`,
-  );
+  const boughtToday = branchAssets(branch).filter((a) => a.acquiredDay === state.day);
+  const writeOffSen = totalBookValue(branchAssets(branch).filter((a) => a.acquiredDay < state.day));
+  let next: GameState = {
+    ...state,
+    ingredients,
+    branches: state.branches.filter((b) => b.location !== location),
+    pendingWriteOffSen: state.pendingWriteOffSen + writeOffSen,
+  };
+  if (branch.fitOut.acquiredDay === state.day) {
+    next = withTransaction(next, 'branch_setup', branch.fitOut.costSen, `Batal buka cawangan: ${def.name}`);
+  }
+  for (const u of branch.upgrades.filter((a) => a.acquiredDay === state.day)) {
+    next = withTransaction(next, 'upgrade', u.costSen, `Batal naik taraf cawangan ${def.shortName}: ${BRANCH_UPGRADES[u.id].name}`);
+  }
+  const refundSen = sumSen(boughtToday.map((a) => a.costSen));
+  const parts = [`Cawangan ${def.shortName} ditutup; stoknya dipulangkan ke stor pusat.`];
+  if (refundSen > 0) parts.push(`${formatRM(refundSen)} yang dibelanjakan hari ini dikembalikan.`);
+  if (writeOffSen > 0) parts.push(`Baki nilai buku (${formatRM(writeOffSen)}) dihapus kira semasa kafe ditutup hari ini.`);
+  return succeed(next, parts.join(' '));
 }
 
 export function renameCafe(state: GameState, name: string): EngineResult {
@@ -545,13 +608,31 @@ export function openCafe(state: GameState, day: number): EngineResult {
   const mods = buildModifiers(state.upgrades, promo, event);
   const baseHourlyCapacity = hourlyCapacity(state.staff, state.upgrades);
 
+  // --- Morning deliveries from the central store to the branches ---
+  const { transfers } = planMorningTransfers(state);
+  const central = { ...state.ingredients };
+  const branchesOpen = state.branches.map((b) => {
+    const units = transfers.find((t) => t.location === b.location)?.units;
+    const held = { ...b.ingredients };
+    for (const id of INGREDIENT_IDS) {
+      const send = units?.[id] ?? 0;
+      if (send <= 0) continue;
+      const taken = takeFromStock(central[id], send);
+      central[id] = taken.item;
+      held[id] = addToStock(held[id], send, taken.costSen);
+    }
+    const needs = branchSupplyNeeds(state, b);
+    const short = INGREDIENT_IDS.filter((id) => (units?.[id] ?? 0) < needs[id].shortfall);
+    return { branch: { ...b, ingredients: held }, short };
+  });
+
   const extra = event?.effects.extraOrders;
   const sim = simulateDay(
     {
       day,
       reputation: state.reputation,
       products: state.products,
-      ingredients: state.ingredients,
+      ingredients: central,
       baseHourlyCapacity,
       mods,
       ...(extra ? { extraOrders: { hour: event.def.hour, items: extra } } : {}),
@@ -559,57 +640,65 @@ export function openCafe(state: GameState, day: number): EngineResult {
     dayRng(state.seed, day, RNG_PURPOSE.demand),
   );
 
-  // --- The branch, served from what the main café left ---
-  const branch = state.branch;
-  const branchDef = branch ? BRANCH_LOCATIONS[branch.location] : null;
-  const branchSim = branch
-    ? simulateDay(
-        {
-          day,
-          reputation: branch.reputation,
-          products: state.products,
-          ingredients: sim.ingredients,
-          baseHourlyCapacity: branchHourlyCapacity(branch),
-          mods: branchModifiers(branch, day, promo, event?.def.id ?? null),
-        },
-        dayRng(state.seed, day, RNG_PURPOSE.branch),
-      )
-    : null;
+  // --- Each branch's day, from its own stock ---
+  const branchDays = branchesOpen.map(({ branch }) => {
+    const branchSim = simulateDay(
+      {
+        day,
+        reputation: branch.reputation,
+        products: state.products,
+        ingredients: branch.ingredients,
+        baseHourlyCapacity: branchHourlyCapacity(branch),
+        mods: branchModifiers(branch, day, promo, event?.def.id ?? null),
+      },
+      dayRng(state.seed, day, RNG_PURPOSE.branch + BRANCH_LOCATION_ORDER.indexOf(branch.location)),
+    );
+    // Overnight spoilage of the branch's own stock.
+    const held = { ...branchSim.ingredients };
+    const spoiledHere = {} as Record<IngredientId, { units: number; valueSen: number }>;
+    for (const id of INGREDIENT_IDS) {
+      const units = Math.floor(held[id].stock * branchSpoilageRate(branch, id));
+      const taken = takeFromStock(held[id], units);
+      held[id] = taken.item;
+      spoiledHere[id] = { units, valueSen: taken.costSen };
+    }
+    return { branch, def: BRANCH_LOCATIONS[branch.location], sim: branchSim, held, spoiled: spoiledHere };
+  });
   // Product lines and ingredient use for the whole business.
   const lines = Object.fromEntries(
     PRODUCT_IDS.map((id) => {
-      const main = sim.lines[id];
-      const b = branchSim?.lines[id];
-      return [
-        id,
-        b
-          ? {
-              ...main,
-              demanded: main.demanded + b.demanded,
-              sold: main.sold + b.sold,
-              unmetStockout: main.unmetStockout + b.unmetStockout,
-              revenueSen: main.revenueSen + b.revenueSen,
-              cogsSen: main.cogsSen + b.cogsSen,
-            }
-          : main,
-      ];
+      const total = { ...sim.lines[id] };
+      for (const { sim: b } of branchDays) {
+        total.demanded += b.lines[id].demanded;
+        total.sold += b.lines[id].sold;
+        total.unmetStockout += b.lines[id].unmetStockout;
+        total.revenueSen += b.lines[id].revenueSen;
+        total.cogsSen += b.lines[id].cogsSen;
+      }
+      return [id, total];
     }),
   ) as typeof sim.lines;
   const used = Object.fromEntries(
     INGREDIENT_IDS.map((id) => [
       id,
-      { units: sim.used[id].units + (branchSim?.used[id].units ?? 0), valueSen: sim.used[id].valueSen + (branchSim?.used[id].valueSen ?? 0) },
+      {
+        units: sim.used[id].units + sumSen(branchDays.map((b) => b.sim.used[id].units)),
+        valueSen: sim.used[id].valueSen + sumSen(branchDays.map((b) => b.sim.used[id].valueSen)),
+      },
     ]),
   ) as typeof sim.used;
 
-  // --- Closing-time spoilage (non-cash write-off of perishable stock) ---
-  const ingredients = { ...(branchSim?.ingredients ?? sim.ingredients) };
+  // --- Closing-time spoilage at the central store (non-cash write-off of perishable stock) ---
+  const ingredients = { ...sim.ingredients };
   const spoiled = {} as Record<IngredientId, { units: number; valueSen: number }>;
   for (const id of INGREDIENT_IDS) {
     const units = Math.floor(ingredients[id].stock * spoilageRate(id, state.upgrades));
     const taken = takeFromStock(ingredients[id], units);
     ingredients[id] = taken.item;
-    spoiled[id] = { units, valueSen: taken.costSen };
+    spoiled[id] = {
+      units: units + sumSen(branchDays.map((b) => b.spoiled[id].units)),
+      valueSen: taken.costSen + sumSen(branchDays.map((b) => b.spoiled[id].valueSen)),
+    };
   }
 
   // --- Settlement cash transactions ---
@@ -625,11 +714,11 @@ export function openCafe(state: GameState, day: number): EngineResult {
     const line = sim.lines[id];
     if (line.sold > 0) addTx('sale', line.revenueSen, `Jualan ${PRODUCTS[id].name} ×${line.sold}`, { productId: id, quantity: line.sold });
   }
-  if (branch && branchSim && branchDef) {
+  for (const { sim: b, def } of branchDays) {
     for (const id of PRODUCT_IDS) {
-      const line = branchSim.lines[id];
+      const line = b.lines[id];
       if (line.sold > 0) {
-        addTx('sale', line.revenueSen, `Cawangan ${branchDef.shortName}: jualan ${PRODUCTS[id].name} ×${line.sold}`, { productId: id, quantity: line.sold });
+        addTx('sale', line.revenueSen, `Cawangan ${def.shortName}: jualan ${PRODUCTS[id].name} ×${line.sold}`, { productId: id, quantity: line.sold });
       }
     }
   }
@@ -643,25 +732,26 @@ export function openCafe(state: GameState, day: number): EngineResult {
   const utilitiesSen = dailyUtilities(state.upgrades, sim.customers.served);
   addTx('rent', -rentSen, 'Sewa premis');
   addTx('utilities', -utilitiesSen, 'Elektrik & air');
-  let branchResult: BranchDayResult | null = null;
-  let branchAfter = branch;
-  if (branch && branchSim && branchDef) {
+  const branchResults: BranchDayResult[] = [];
+  let branchesAfter: BranchState[] = [];
+  for (const { branch, def, sim: b, held, spoiled: spoiledHere } of branchDays) {
     const fixed = branchFixedCosts(branch);
-    const branchUtilitiesSen = branchUtilities(branch, branchSim.customers.served);
-    addTx('wages', -fixed.wagesSen, `Gaji barista cawangan ×${branch.baristas} (${branchDef.shortName})`);
-    addTx('rent', -fixed.rentSen, `Sewa cawangan ${branchDef.shortName}`);
-    addTx('utilities', -branchUtilitiesSen, `Elektrik & air cawangan ${branchDef.shortName}`);
+    const branchUtilitiesSen = branchUtilities(branch, b.customers.served);
+    addTx('wages', -fixed.wagesSen, `Gaji barista cawangan ×${branch.baristas} (${def.shortName})`);
+    addTx('rent', -fixed.rentSen, `Sewa cawangan ${def.shortName}`);
+    addTx('utilities', -branchUtilitiesSen, `Elektrik & air cawangan ${def.shortName}`);
     const bRep = reputationChange({
       reputation: branch.reputation,
-      customers: branchSim.customers,
-      priceIndex: branchSim.priceIndex,
+      customers: b.customers,
+      priceIndex: b.priceIndex,
       upgrades: [],
       promotionDelta: promo.reputationDelta,
       eventDelta: 0,
     });
-    const revenue = sumSen(PRODUCT_IDS.map((id) => branchSim.lines[id].revenueSen));
-    const cogs = sumSen(PRODUCT_IDS.map((id) => branchSim.lines[id].cogsSen));
-    branchResult = {
+    const revenue = sumSen(PRODUCT_IDS.map((id) => b.lines[id].revenueSen));
+    const cogs = sumSen(PRODUCT_IDS.map((id) => b.lines[id].cogsSen));
+    const spoilage = sumSen(INGREDIENT_IDS.map((id) => spoiledHere[id].valueSen));
+    branchResults.push({
       location: branch.location,
       baristas: branch.baristas,
       revenueSen: revenue,
@@ -669,13 +759,14 @@ export function openCafe(state: GameState, day: number): EngineResult {
       wagesSen: fixed.wagesSen,
       rentSen: fixed.rentSen,
       utilitiesSen: branchUtilitiesSen,
-      contributionSen: revenue - cogs - fixed.wagesSen - fixed.rentSen - branchUtilitiesSen,
-      customers: branchSim.customers,
-      hourlyRevenueSen: branchSim.hourly.map((h) => h.revenueSen),
+      spoilageSen: spoilage,
+      contributionSen: revenue - cogs - fixed.wagesSen - fixed.rentSen - branchUtilitiesSen - spoilage,
+      customers: b.customers,
+      hourlyRevenueSen: b.hourly.map((h) => h.revenueSen),
       reputationBefore: branch.reputation,
       reputationAfter: bRep.after,
-    };
-    branchAfter = { ...branch, reputation: bRep.after };
+    });
+    branchesAfter.push({ ...branch, reputation: bRep.after, ingredients: held });
   }
 
   // Loan installment, charged even if cash runs short (which counts toward bankruptcy).
@@ -701,11 +792,16 @@ export function openCafe(state: GameState, day: number): EngineResult {
   // --- Profit & loss ---
   const depreciation = depreciateAtClose(state.assets);
   let depreciationSen = depreciation.chargeSen;
-  if (branchAfter) {
-    const step = depreciateOne(branchAfter.fitOut);
-    branchAfter = { ...branchAfter, fitOut: step.asset };
-    depreciationSen += step.chargeSen;
-  }
+  branchesAfter = branchesAfter.map((b) => {
+    const fitOut = depreciateOne(b.fitOut);
+    depreciationSen += fitOut.chargeSen;
+    const upgrades = b.upgrades.map((u) => {
+      const step = depreciateOne(u);
+      depreciationSen += step.chargeSen;
+      return step.asset;
+    });
+    return { ...b, fitOut: fitOut.asset, upgrades };
+  });
   const revenueSen = sumSen(PRODUCT_IDS.map((id) => lines[id].revenueSen));
   const cogsSen = sumSen(PRODUCT_IDS.map((id) => lines[id].cogsSen));
   const spoilageSen = sumSen(INGREDIENT_IDS.map((id) => spoiled[id].valueSen));
@@ -755,6 +851,11 @@ export function openCafe(state: GameState, day: number): EngineResult {
       text: `Kafe dibuka. Hari ${weekdayName(day)}, kapasiti ${capacityForHour(8, baseHourlyCapacity, mods)} pesanan sejam.`,
     },
   ];
+  for (const { branch, short } of branchesOpen) {
+    if (short.length === 0) continue;
+    const names = short.map((id) => INGREDIENTS[id].name).join(', ');
+    timeline.push({ hour: 8, tone: 'warn', text: `Stor pusat tidak cukup untuk dihantar ke cawangan ${BRANCH_LOCATIONS[branch.location].shortName}: ${names}.` });
+  }
   if (promotionSkipped) {
     timeline.push({ hour: 8, tone: 'warn', text: `Promosi "${chosenPromo.name}" dibatalkan — tunai tidak mencukupi.` });
   } else if (promo.id !== 'none') {
@@ -772,18 +873,15 @@ export function openCafe(state: GameState, day: number): EngineResult {
     tone: 'neutral',
     text: `Kafe ditutup pada ${formatHour(20)}. ${sim.customers.served} pelanggan dilayan.`,
   });
-  if (branchResult && branchDef) {
+  for (const r of branchResults) {
+    const short = BRANCH_LOCATIONS[r.location].shortName;
     timeline.push({
       hour: 20,
-      tone: branchResult.contributionSen >= 0 ? 'good' : 'warn',
-      text: `Cawangan ${branchDef.shortName}: ${branchResult.customers.served} pelanggan dilayan, jualan ${formatRM(branchResult.revenueSen)}.`,
+      tone: r.contributionSen >= 0 ? 'good' : 'warn',
+      text: `Cawangan ${short}: ${r.customers.served} pelanggan dilayan, jualan ${formatRM(r.revenueSen)}.`,
     });
-    if (branchResult.customers.lostStock > 0) {
-      timeline.push({
-        hour: 20,
-        tone: 'warn',
-        text: `Cawangan ${branchDef.shortName}: ${branchResult.customers.lostStock} pelanggan beredar kerana bahan habis (kafe utama didahulukan).`,
-      });
+    if (r.customers.lostStock > 0) {
+      timeline.push({ hour: 20, tone: 'warn', text: `Cawangan ${short}: ${r.customers.lostStock} pelanggan beredar kerana bahan habis.` });
     }
   }
   // Stable sort by hour keeps same-hour entries in insertion order.
@@ -810,7 +908,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     purchased: purchasedToday(id),
     used: used[id].units,
     spoiled: spoiled[id].units,
-    closingStock: ingredients[id].stock,
+    closingStock: ingredients[id].stock + sumSen(branchesAfter.map((b) => b.ingredients[id].stock)),
     usedValueSen: used[id].valueSen,
     spoiledValueSen: spoiled[id].valueSen,
   }));
@@ -838,9 +936,9 @@ export function openCafe(state: GameState, day: number): EngineResult {
     openingDebtSen: state.dayStart.debtSen,
     closingDebtSen: remainingPrincipal(loanAfter),
     openingAssetsSen: state.dayStart.assetsSen,
-    closingAssetsSen: fixedAssetsBookValue(depreciation.assets, branchAfter),
+    closingAssetsSen: fixedAssetsBookValue(depreciation.assets, branchesAfter),
     openingInventorySen: state.dayStart.inventorySen,
-    closingInventorySen: inventoryValue(ingredients),
+    closingInventorySen: totalInventoryValue({ ingredients, branches: branchesAfter }),
     reputationBefore: state.reputation,
     reputationAfter: rep.after,
     customers: sim.customers,
@@ -851,7 +949,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     objectivesCompleted: [],
     goal: state.goal ? goalResult(state.goal, revenueSen) : null,
     ingredients: ingredientLines,
-    branch: branchResult,
+    branches: branchResults,
   };
 
   // --- Stats & status ---
@@ -861,7 +959,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
   const saturdayGoalMet = state.history.find((r) => r.day === day - 1)?.goal?.achieved === true;
   const stats = {
     daysCompleted: state.stats.daysCompleted + 1,
-    totalServed: state.stats.totalServed + sim.customers.served + (branchResult?.customers.served ?? 0),
+    totalServed: state.stats.totalServed + sim.customers.served + sumSen(branchResults.map((r) => r.customers.served)),
     totalRevenueSen: state.stats.totalRevenueSen + revenueSen,
     totalNetProfitSen: state.stats.totalNetProfitSen + netProfitSen,
     bestDayRevenueSen: Math.max(state.stats.bestDayRevenueSen, revenueSen),
@@ -874,7 +972,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     holidayGoalsMet: state.stats.holidayGoalsMet + (goalMet && report.goal?.kind === 'holiday' ? 1 : 0),
     perfectWeekends: state.stats.perfectWeekends + (goalMet && isSunday(day) && saturdayGoalMet ? 1 : 0),
     // A branch counts once it has traded its first day (an opening cancelled that day does not).
-    branchesOpened: state.stats.branchesOpened + (branch && branch.openedDay === day ? 1 : 0),
+    branchesOpened: state.stats.branchesOpened + state.branches.filter((b) => b.openedDay === day).length,
   };
 
   const settled: GameState = {
@@ -890,7 +988,7 @@ export function openCafe(state: GameState, day: number): EngineResult {
     stats,
     loan: loanAfter,
     assets: depreciation.assets,
-    branch: branchAfter,
+    branches: branchesAfter,
     pendingWriteOffSen: 0,
   };
 
@@ -929,9 +1027,9 @@ export function startNextDay(state: GameState, day: number): EngineResult {
     goal: dayGoalFor(nextDay, todayEventId, state.history),
     dayStart: {
       cashSen: state.cashSen,
-      inventorySen: inventoryValue(state.ingredients),
+      inventorySen: totalInventoryValue(state),
       debtSen: remainingPrincipal(state.loan),
-      assetsSen: fixedAssetsBookValue(state.assets, state.branch),
+      assetsSen: fixedAssetsBookValue(state.assets, state.branches),
       staffNames: state.staff.map((s) => s.name),
       cafeName: state.cafeName,
       priceSen: menuPrices(state.products),

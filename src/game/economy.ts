@@ -18,7 +18,7 @@ import { UPGRADES } from './data/upgrades';
 import { resolveEvent } from './events';
 import { installmentDue } from './loans';
 import { applyBps, mulDivRound, sumSen } from './money';
-import type { BranchState, GameState, IngredientId, IngredientState, ProductId, StaffMember, UpgradeId } from './types';
+import type { BranchState, GameState, IngredientId, ProductId, StaffMember, UpgradeId } from './types';
 import { INGREDIENT_IDS } from './types';
 
 export interface PurchaseQuote {
@@ -98,8 +98,13 @@ export function averageUnitCost(item: Stocked): number {
   return mulDivRound(item.stockValueSen, 1, item.stock);
 }
 
-export function inventoryValue(ingredients: Record<IngredientId, IngredientState>): number {
+export function inventoryValue(ingredients: Record<IngredientId, Stocked>): number {
   return sumSen(INGREDIENT_IDS.map((id) => ingredients[id].stockValueSen));
+}
+
+/** Stock at the central store and every branch. */
+export function totalInventoryValue(state: Pick<GameState, 'ingredients' | 'branches'>): number {
+  return inventoryValue(state.ingredients) + sumSen(state.branches.map((b) => inventoryValue(b.ingredients)));
 }
 
 /** The ingredients one unit of a product uses, as [ingredient, units] pairs. */
@@ -111,12 +116,12 @@ export function recipeOf(productId: ProductId): [IngredientId, number][] {
 }
 
 /** How many of a product the stock on hand can make (ignoring other products sharing it). */
-export function servingsAvailable(ingredients: Record<IngredientId, IngredientState>, productId: ProductId): number {
+export function servingsAvailable(ingredients: Record<IngredientId, Stocked>, productId: ProductId): number {
   return Math.min(...recipeOf(productId).map(([id, qty]) => Math.floor(ingredients[id].stock / qty)));
 }
 
 /** The ingredient that runs out first for a product, if its stock cannot make one more. */
-export function missingIngredient(ingredients: Record<IngredientId, IngredientState>, productId: ProductId): IngredientId | null {
+export function missingIngredient(ingredients: Record<IngredientId, Stocked>, productId: ProductId): IngredientId | null {
   return recipeOf(productId).find(([id, qty]) => ingredients[id].stock < qty)?.[0] ?? null;
 }
 
@@ -164,7 +169,7 @@ export function branchUtilities(branch: BranchState, served: number): number {
 
 /**
  * Fixed payments known before opening, all charged at today's close: wages, rent, base utilities
- * (excluding the per-customer part), the branch's own (all three together) and any loan
+ * (excluding the per-customer part), the branches' own (all three together) and any loan
  * installment due.
  */
 export function projectedFixedCosts(state: GameState): {
@@ -178,8 +183,12 @@ export function projectedFixedCosts(state: GameState): {
   const wagesSen = dailyWages(state.staff);
   const rentSen = dailyRent();
   const utilitiesBaseSen = dailyUtilities(state.upgrades, 0);
-  const branch = state.branch ? branchFixedCosts(state.branch) : null;
-  const branchSen = branch ? branch.wagesSen + branch.rentSen + branch.utilitiesBaseSen : 0;
+  const branchSen = sumSen(
+    state.branches.map((b) => {
+      const f = branchFixedCosts(b);
+      return f.wagesSen + f.rentSen + f.utilitiesBaseSen;
+    }),
+  );
   const loanSen = installmentDue(state.loan, state.day)?.totalSen ?? 0;
   return { wagesSen, rentSen, utilitiesBaseSen, branchSen, loanSen, totalSen: wagesSen + rentSen + utilitiesBaseSen + branchSen + loanSen };
 }

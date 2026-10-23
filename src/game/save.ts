@@ -26,9 +26,12 @@
  *       purchases name an `ingredientId`; reports gain `ingredients` lines
  *       (null on older reports, whose product lines keep their spoilage and
  *       closing stock).
- *   v7 (current): a second branch — `game.branch`, `game.pendingWriteOffSen`,
+ *   v7: a second branch — `game.branch`, `game.pendingWriteOffSen`,
  *       `stats.branchesOpened`, the `branch_setup` transaction type, and
  *       per-report `branch` and `expenses.writeOffSen`.
+ *   v8 (current): up to three branches — `game.branches` replaces
+ *       `game.branch`, each with its own `upgrades` and `ingredients`;
+ *       per-report `branches` (with `spoilageSen`) replaces `branch`.
  */
 import { DEFAULT_CAFE_NAME, MAX_PRICE_SEN, MIN_PRICE_SEN, SAVE_SCHEMA_VERSION } from './constants';
 import { INGREDIENTS } from './data/ingredients';
@@ -36,6 +39,7 @@ import { PRODUCTS } from './data/products';
 import { UPGRADES } from './data/upgrades';
 import { PROMOTIONS } from './data/promotions';
 import { newAsset } from './assets';
+import { emptyStock } from './branch';
 import { createInitialIngredients, createNewGame, hiringLabel, sanitizeCafeName, wagesLabelPrefix } from './engine';
 import { recipeOf } from './economy';
 import { dayGoalFor } from './goals';
@@ -373,6 +377,27 @@ function migrateV6toV7(v6: unknown): unknown {
   };
 }
 
+/**
+ * v7 -> v8: the one branch becomes the first of the list. It sold from the central stock, so it
+ * holds none of its own, and it had no upgrades; nothing of its own spoiled.
+ */
+function migrateV7toV8(v7: unknown): unknown {
+  if (!isObj(v7)) return v7;
+  const { branch, ...rest } = v7;
+  return {
+    ...rest,
+    schemaVersion: 8,
+    branches: isObj(branch) ? [{ ...branch, upgrades: [], ingredients: emptyStock() }] : [],
+    history: Array.isArray(v7.history)
+      ? v7.history.map((r: unknown) => {
+          if (!isObj(r)) return r;
+          const { branch: day, ...report } = r;
+          return { ...report, branches: isObj(day) ? [{ ...day, spoilageSen: 0 }] : [] };
+        })
+      : v7.history,
+  };
+}
+
 export type MigrationResult =
   | { ok: true; game: unknown; fromVersion: number }
   /** `newer`: written by a newer version of the game, so this build must not touch it. */
@@ -422,6 +447,10 @@ export function migrateSave(raw: unknown): MigrationResult {
   if (version === 6) {
     game = migrateV6toV7(game);
     version = 7;
+  }
+  if (version === 7) {
+    game = migrateV7toV8(game);
+    version = 8;
   }
   if (version !== SAVE_SCHEMA_VERSION) return { ok: false, error: 'Migrasi simpanan tidak lengkap.' };
   return { ok: true, game, fromVersion };

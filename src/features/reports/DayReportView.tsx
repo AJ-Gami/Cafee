@@ -87,7 +87,9 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
 
       {week ? <WeekSummaryCard summary={week} closing /> : null}
 
-      {report.branch ? <BranchDayCard branch={report.branch} /> : null}
+      {report.branches.map((b) => (
+        <BranchDayCard key={b.location} branch={b} />
+      ))}
 
       {report.eventId ? (
         <Card>
@@ -100,7 +102,7 @@ export function DayReportView({ report, week = null }: { report: DayReport; week
       <Card>
         <CardTitle
           title="Untung & rugi"
-          subtitle={report.branch ? 'Penyata pendapatan hari ini (kafe utama dan cawangan)' : 'Penyata pendapatan hari ini'}
+          subtitle={report.branches.length > 0 ? 'Penyata pendapatan hari ini (kafe utama dan cawangan)' : 'Penyata pendapatan hari ini'}
           icon={<Receipt className="size-5" />}
         />
         <dl className="divide-y divide-espresso-800/[0.07]">
@@ -306,12 +308,13 @@ function BranchDayCard({ branch: b }: { branch: BranchDayResult }) {
         <Row label="Gaji" value={<Money sen={-b.wagesSen} />} />
         <Row label="Sewa" value={<Money sen={-b.rentSen} />} />
         <Row label="Utiliti" value={<Money sen={-b.utilitiesSen} />} />
+        {b.spoilageSen > 0 ? <Row label="Pembaziran stok cawangan" value={<Money sen={-b.spoilageSen} />} /> : null}
         <Row label="Sumbangan cawangan" value={<Money sen={b.contributionSen} colored />} strong />
       </dl>
       <p className="mt-2 text-sm text-espresso-600">
-        Sudah termasuk dalam jumlah syarikat di atas. Sumbangan belum ditolak susut nilai kelengkapan cawangan. Reputasi cawangan:{' '}
-        {b.reputationBefore} → {b.reputationAfter}.
-        {b.customers.lostStock > 0 ? ` ${b.customers.lostStock} pelanggan beredar kerana bahan habis — kafe utama didahulukan.` : ''}
+        Sudah termasuk dalam jumlah syarikat di atas. Sumbangan belum ditolak susut nilai kelengkapan dan naik taraf cawangan. Reputasi
+        cawangan: {b.reputationBefore} → {b.reputationAfter}.
+        {b.customers.lostStock > 0 ? ` ${b.customers.lostStock} pelanggan beredar kerana bahan cawangan habis.` : ''}
       </p>
     </Card>
   );

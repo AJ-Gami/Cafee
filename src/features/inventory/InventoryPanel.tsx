@@ -123,7 +123,10 @@ export function InventoryPanel({ locked }: { locked: boolean }) {
           dispatch({ type: 'PURCHASE_BATCH', items: plan.items });
         }}
       >
-        <p>Beli stok untuk memenuhi anggaran permintaan hari ini:</p>
+        <p>
+          Beli stok untuk memenuhi anggaran permintaan hari ini
+          {game.branches.length > 0 ? ', termasuk bahan yang dihantar ke cawangan semasa kafe dibuka' : ''}:
+        </p>
         <ul className="mt-2 space-y-1">
           {plan.items.map((i) => (
             <li key={i.ingredientId} className="flex justify-between gap-2">

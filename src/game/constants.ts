@@ -3,7 +3,7 @@
  * numbers, not real Malaysian market data.
  */
 
-export const SAVE_SCHEMA_VERSION = 7;
+export const SAVE_SCHEMA_VERSION = 8;
 
 export const STARTING_CASH_SEN = 500_000; // RM5,000
 export const STARTING_REPUTATION = 50;
@@ -60,8 +60,10 @@ export const HISTORY_LIMIT = 60;
 /** Upgrades are fixed assets, depreciated straight-line over this many closes. */
 export const ASSET_LIFE_DAYS = 90;
 
-/** A second branch: unlocked at this café level, its fit-out depreciated over this many closes. */
+/** Branches: the café level each one needs (first, second, third), at most one per location. */
+export const BRANCH_LEVELS: readonly number[] = [3, 4, 4];
 export const BRANCH_MIN_LEVEL = 3;
+/** A branch fit-out is depreciated over this many closes. */
 export const BRANCH_LIFE_DAYS = 180;
 export const BRANCH_STARTING_REPUTATION = 40;
 /** The branch runs with 1 to this many baristas, each on a fixed wage and output. */

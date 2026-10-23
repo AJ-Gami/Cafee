@@ -62,16 +62,20 @@ type Loose = Record<string, any>;
  * (milk and tea as teh ais), and reports carry their spoilage on product lines. Transactions are
  * kept as they are, so the same play compares equal in both builds.
  */
-async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string, version: 2 | 3 | 4 | 5 | 6 = 2): Promise<void> {
+async function writeAsOldBuild(page: Page, game: StoredSave['game'], saveId: string, version: 2 | 3 | 4 | 5 | 6 | 7 = 2): Promise<void> {
   const g = structuredClone(game) as unknown as Loose;
   g.schemaVersion = version;
-  // Added in v7 (a second branch). These tests open no branch.
-  delete g.branch;
-  delete g.pendingWriteOffSen;
-  delete g.stats.branchesOpened;
-  for (const r of g.history as Loose[]) {
-    delete r.branch;
-    delete r.expenses.writeOffSen;
+  // Added in v8 (several branches). These tests open no branch.
+  delete g.branches;
+  for (const r of g.history as Loose[]) delete r.branches;
+  if (version === 7) {
+    g.branch = null;
+    for (const r of g.history as Loose[]) r.branch = null;
+  } else {
+    // Added in v7 (a second branch).
+    delete g.pendingWriteOffSen;
+    delete g.stats.branchesOpened;
+    for (const r of g.history as Loose[]) delete r.expenses.writeOffSen;
   }
   if (version <= 5) {
     // Added in v6 (ingredient stock).
@@ -158,7 +162,7 @@ test('an older-build tab that is behind cannot replace newer progress; a divergi
   await expect(a.getByRole('button', { name: 'Pulihkan salinan sandaran: Kopi Kita, Hari 1' })).toBeVisible();
 });
 
-for (const version of [2, 3, 4, 5, 6] as const) {
+for (const version of [2, 3, 4, 5, 6, 7] as const) {
   test(`progress made further ahead in an older-build tab (v${version}) is adopted, not reverted`, async ({ context }) => {
     const a = await context.newPage();
     const old = await context.newPage();
@@ -191,7 +195,8 @@ for (const version of [2, 3, 4, 5, 6] as const) {
     expect(upgraded?.game.ingredients.kopi.stock).toBeGreaterThan(0);
     // Reports from before ingredient stock keep their per-product lines.
     expect((upgraded?.game.history[0] as Loose | undefined)?.ingredients === null).toBe(version <= 5);
-    expect(upgraded?.game).toMatchObject({ branch: null, pendingWriteOffSen: 0 });
+    expect(upgraded?.game).toMatchObject({ branches: [], pendingWriteOffSen: 0 });
+    expect('branch' in (upgraded?.game ?? {})).toBe(false);
   });
 }
 

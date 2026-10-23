@@ -89,9 +89,12 @@ export function DayPlayback({ report, onDone }: { report: DayReport; onDone: () 
           <dd className="tabular mt-0.5 text-xl font-semibold">{snapshot.lost}</dd>
         </div>
       </dl>
-      {report.branch ? (
+      {report.branches.length > 0 ? (
         <p className="mt-2 text-sm text-espresso-700">
-          Cawangan {BRANCH_LOCATIONS[report.branch.location].shortName}: jualan <Money sen={snapshot.branchRevenueSen} />
+          {report.branches.length === 1
+            ? `Cawangan ${BRANCH_LOCATIONS[report.branches[0]!.location].shortName}`
+            : `${report.branches.length} cawangan`}
+          : jualan <Money sen={snapshot.branchRevenueSen} />
         </p>
       ) : null}
       {goal ? (
