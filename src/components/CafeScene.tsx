@@ -1,11 +1,56 @@
 import { useId } from 'react';
 
+const SHIRTS = ['#c4673f', '#4d6b53', '#b9814f', '#5a6f8f', '#8a5a7a', '#d9a441', '#3f5a45'];
+const SKIN = ['#f0d2b4', '#e8c4a0', '#c99a73', '#8d5a3b'];
+const HAIR = ['#241914', '#3b2a20', '#6b4e3b', '#1c1c1c'];
+const TUDUNG = ['#cfdccd', '#ecd3b6', '#8a5a7a', '#5a6f8f', '#efe4d3'];
+/** Where customers stand at the counter, left to right. */
+const SPOTS = [62, 112, 162, 212, 262, 312, 362, 87, 337];
+
+/** A customer at the counter, seen from behind. `look` picks the clothes and hair. */
+function Customer({ x, look }: { x: number; look: number }) {
+  const shirt = SHIRTS[look % SHIRTS.length];
+  const skin = SKIN[(look >> 1) % SKIN.length];
+  const tudung = look % 3 === 1;
+  return (
+    <g className="motion-safe:animate-fade-up" style={{ transformBox: 'fill-box', transformOrigin: 'center bottom' }}>
+      <path d={`M${x - 19} 222c0-34 7-46 19-46s19 12 19 46z`} fill={shirt} />
+      {tudung ? (
+        <>
+          <path d={`M${x - 15} 186c-2-26 6-40 15-40s17 14 15 40c-6 6-24 6-30 0z`} fill={TUDUNG[look % TUDUNG.length]} />
+          <ellipse cx={x} cy="160" rx="10" ry="11" fill={TUDUNG[look % TUDUNG.length]} />
+        </>
+      ) : (
+        <>
+          <rect x={x - 4} y="166" width="8" height="10" fill={skin} />
+          <circle cx={x} cy="157" r="11" fill={skin} />
+          <path d={`M${x - 11} 158a11 11 0 0 1 22 0c0-4-3-14-11-14s-11 10-11 14z`} fill={HAIR[look % HAIR.length]} />
+        </>
+      )}
+    </g>
+  );
+}
+
 /**
  * Lightweight vector café interior used as the hero backdrop (no image downloads).
- * `evening` switches to warm lamp light after closing.
+ * `evening` switches to warm lamp light after closing. `customers` (up to nine) stand at the
+ * counter, dressed according to `seed`; `shaded` darkens the bottom for overlaid text.
  */
-export function CafeScene({ evening = false, className = '' }: { evening?: boolean; className?: string }) {
+export function CafeScene({
+  evening = false,
+  customers = 0,
+  seed = 0,
+  shaded = true,
+  className = '',
+}: {
+  evening?: boolean;
+  customers?: number;
+  seed?: number;
+  shaded?: boolean;
+  className?: string;
+}) {
   const id = useId().replace(/:/g, '');
+  const shown = SPOTS.slice(0, Math.max(0, Math.round(customers))).map((x, i) => ({ x, i }));
   const g = (name: string) => `${name}-${id}`;
   return (
     <svg viewBox="0 0 400 220" preserveAspectRatio="xMidYMid slice" className={className} aria-hidden="true" focusable="false">
@@ -143,8 +188,13 @@ export function CafeScene({ evening = false, className = '' }: { evening?: boole
         <path d="M344 120c-2 3 2 5 0 8M352 120c-2 3 2 5 0 8" stroke="#f7f0e6" strokeWidth="1.4" fill="none" opacity="0.7" strokeLinecap="round" />
       </g>
 
+      {/* Customers at the counter; the last two stand between others, drawn behind them */}
+      {[...shown.filter((c) => c.i >= 7), ...shown.filter((c) => c.i < 7)].map(({ x, i }) => (
+        <Customer key={`${seed}-${i}`} x={x} look={(seed * 7 + i * 3) % 60} />
+      ))}
+
       {/* Bottom shade so overlaid text stays legible */}
-      <rect width="400" height="220" fill={`url(#${g('shade')})`} />
+      {shaded ? <rect width="400" height="220" fill={`url(#${g('shade')})`} /> : null}
     </svg>
   );
 }

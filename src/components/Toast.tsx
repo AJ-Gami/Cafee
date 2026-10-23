@@ -1,6 +1,7 @@
 import { CircleAlert, CircleCheck, Info, Target } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useGame } from '../app/GameProvider';
+import { playSound } from '../app/sound';
 import { objectiveDef } from '../game/objectives';
 import { useModalOpenSeq, useOpenModalCount } from './Modal';
 
@@ -18,6 +19,13 @@ export function Toast() {
     if (openSeq !== prevOpenSeq.current && feedback) dispatch({ type: 'DISMISS_FEEDBACK', id: feedback.id });
     prevOpenSeq.current = openSeq;
   }, [openSeq, feedback, dispatch]);
+
+  // One sound per new message: errors, objectives reached, or a plain success.
+  const feedbackId = feedback?.id;
+  const feedbackSound = !feedback ? null : feedback.kind === 'error' ? 'error' : feedback.objectives.length > 0 ? 'fanfare' : feedback.kind === 'success' ? 'success' : null;
+  useEffect(() => {
+    if (feedbackId !== undefined && feedbackSound) playSound(feedbackSound);
+  }, [feedbackId, feedbackSound]);
 
   useEffect(() => {
     if (!feedback) return;

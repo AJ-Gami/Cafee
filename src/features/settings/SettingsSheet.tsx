@@ -1,4 +1,4 @@
-import { BookOpen, HardDrive, Pencil, RotateCcw, Save, ShieldCheck } from 'lucide-react';
+import { BookOpen, HardDrive, Pencil, RotateCcw, Save, ShieldCheck, Volume2 } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { useGame } from '../../app/GameProvider';
 import { Button } from '../../components/Button';
@@ -7,7 +7,9 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Sheet } from '../../components/Modal';
 import { Notice } from '../../components/Notice';
 import { CAFE_NAME_MAX_LENGTH, SAVE_SCHEMA_VERSION } from '../../game/constants';
+import { setSoundEnabled, useSoundEnabled } from '../../app/sound';
 import { useTutorialHidden } from '../../app/tutorial';
+import { Switch } from '../../components/Switch';
 import { tutorialSteps } from '../../game/tutorial';
 import { BackupCard } from './BackupCard';
 
@@ -16,6 +18,24 @@ function formatSavedAt(iso: string | null): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'tidak diketahui';
   return d.toLocaleString('ms-MY', { dateStyle: 'medium', timeStyle: 'medium' });
+}
+
+function SoundSetting() {
+  const on = useSoundEnabled();
+  return (
+    <Card>
+      <div className="flex items-center gap-3">
+        <span className="shrink-0 text-espresso-600">
+          <Volume2 className="size-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-display text-lg leading-tight text-espresso-800">Bunyi</h2>
+          <p className="text-sm text-espresso-600">Loceng pintu, mesin wang dan bunyi kejayaan.</p>
+        </div>
+        <Switch checked={on} onChange={setSoundEnabled} label="Kesan bunyi" />
+      </div>
+    </Card>
+  );
 }
 
 /** Bring the getting-started guide back after it was hidden. */
@@ -84,6 +104,8 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             </Button>
           </form>
         </Card>
+
+        <SoundSetting />
 
         <Card>
           <CardTitle title="Simpanan permainan" icon={<HardDrive className="size-5" />} />

@@ -1,6 +1,8 @@
 import { FastForward, Store } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { playSound } from '../../app/sound';
 import { Button } from '../../components/Button';
+import { CafeScene } from '../../components/CafeScene';
 import { Card } from '../../components/Card';
 import { Money } from '../../components/Money';
 import { ProgressBar } from '../../components/ProgressBar';
@@ -41,6 +43,28 @@ export function DayPlayback({ report, onDone }: { report: DayReport; onDone: () 
     return () => window.clearTimeout(t);
   }, [step, totalSteps, reduceMotion]);
 
+  // Sounds follow the replay: the door bell at opening, a tick for each hour with sales, a
+  // fanfare when the day's goal is reached and the till when the café closes.
+  const goalSounded = useRef(false);
+  useEffect(() => {
+    if (step === 0) {
+      playSound('bell');
+      return;
+    }
+    const now = cumulative[Math.min(step, totalSteps) - 1];
+    const before = step > 1 ? cumulative[step - 2] : undefined;
+    const target = report.goal?.targetSen;
+    const total = (s: typeof now) => (s ? s.revenueSen + s.branchRevenueSen : 0);
+    if (target !== undefined && !goalSounded.current && total(now) >= target) {
+      goalSounded.current = true;
+      playSound('fanfare');
+    } else if (step >= totalSteps) {
+      playSound('register');
+    } else if (total(now) > total(before)) {
+      playSound('tick');
+    }
+  }, [step, cumulative, totalSteps, report.goal]);
+
   const currentHour = step === 0 ? OPEN_HOUR : step >= totalSteps ? CLOSE_HOUR : OPEN_HOUR + step;
   const empty = { served: 0, revenueSen: 0, lost: 0, branchRevenueSen: 0 };
   const snapshot = step === 0 ? empty : (cumulative[Math.min(step, totalSteps) - 1] ?? empty);
@@ -51,8 +75,17 @@ export function DayPlayback({ report, onDone }: { report: DayReport; onDone: () 
   const closed = step >= totalSteps;
   const goalReached = goal !== null && (closed ? goal.achieved : totalRevenueSen >= goal.targetSen);
 
+  const servedThisHour = step === 0 || closed ? 0 : snapshot.served - (step > 1 ? (cumulative[step - 2]?.served ?? 0) : 0);
+
   return (
     <Card className="overflow-hidden">
+      <CafeScene
+        evening={closed}
+        customers={Math.ceil(servedThisHour / 3)}
+        seed={step}
+        shaded={false}
+        className="-mx-4 -mt-4 mb-4 block h-44 w-[calc(100%+2rem)] max-w-none"
+      />
       <p className="sr-only" role="status">
         {closed
           ? `Kafe ditutup. ${snapshot.served} pelanggan dilayan.${goal ? (goal.achieved ? ' Sasaran jualan dicapai.' : ' Sasaran jualan tidak dicapai.') : ''}`

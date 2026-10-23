@@ -78,6 +78,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 ## Features
 
 - **Getting-started guide:** five steps derived from the game state (no progress stored), shown as a dashboard card and as a hint on each step's screen; hiding it is remembered per device for that game (a new game shows it again).
+- **Sound and replay scene:** sound effects synthesised with the Web Audio API (no audio files): a door bell at opening, a tick for each hour with sales, a fanfare for a goal or objective, the till at closing, and short sounds for successful and failed actions. They can be switched off in Settings (remembered per device). The day replay shows the café with that hour's customers at the counter.
 - **Pricing and menu:** per-product price editor with a live margin and price-perception preview, plus menu on/off toggles.
 - **Inventory by ingredient:** coffee beans, milk, tea and croissant dough, each held at weighted-average cost. Products are made from them by recipe, so products sharing an ingredient (latte and teh ais both use milk) compete for it, and a product runs out when any of its ingredients does. Purchases with quick quantities, bulk discounts (50+ units 5%, 100+ units 8%), a one-tap restock to the forecast (each ingredient's need summed over the menu), how many of each product the stock can make, low/out-of-stock warnings and insufficient-funds states. Reports show each ingredient's purchases, use, spoilage and closing stock.
 - **Demand model:** reputation, weekday, price elasticity, promotions, upgrades, events, substitution on stock-outs and price objections, and drink→croissant add-ons.
@@ -107,7 +108,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 src/
   main.tsx                 entry: StrictMode + error boundary
   index.css                Tailwind v4 theme tokens (cream / espresso / sage)
-  app/                     shell, navigation (hash-based), GameProvider (load/autosave/reset)
+  app/                     shell, navigation (hash-based), GameProvider (load/autosave/reset), sound effects, guide visibility
   components/              reusable UI: Button, Card, Badge, Money, Modal/Sheet, ConfirmDialog,
                            Segmented, Switch, Toast, Notice, Stat, ProgressBar, CafeScene (SVG)
   features/
@@ -218,6 +219,7 @@ npm run test:e2e
 | Spec | Covers |
 |---|---|
 | `tutorial.spec.ts` | the guide card leads to the inventory, each step's hint appears on its screen and moves on as steps are done; hiding it lasts after a reload; showing it again from Settings |
+| `sound.spec.ts` | buying stock and the day replay play sounds and the replay shows customers; switched off in Settings, no sound is played, also after a reload |
 | `core-loop.spec.ts` | starting state; buy stock → edit price → open → reconciled report → refresh keeps progress → next day; double-tap settles once; no-stock confirmation; leaving the replay |
 | `ingredients.spec.ts` | ingredient cards and what each product can make from them, following its recipe as ingredients are bought; the report's ingredient movements |
 | `screens.spec.ts` | no horizontal overflow and no touch target under 40px on every screen at 360/390/768px; menu (recipe and ingredient cost), inventory (low stock, insufficient funds), staff hiring, finance charts/table/report sheet/ledger, share-card download |
