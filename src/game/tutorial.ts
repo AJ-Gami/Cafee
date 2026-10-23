@@ -6,7 +6,7 @@ import { currentLevel } from './objectives';
 import type { GameState } from './types';
 import { INGREDIENT_IDS } from './types';
 
-export type TutorialStepId = 'stok' | 'buka' | 'laporan' | 'kapasiti' | 'tahap';
+export type TutorialStepId = 'stok' | 'buka' | 'laporan' | 'rutin' | 'tahap';
 
 export interface TutorialStep {
   id: TutorialStepId;
@@ -57,13 +57,13 @@ export function tutorialSteps(state: GameState): TutorialStep[] {
       done: state.day > 1,
     },
     {
-      id: 'kapasiti',
-      title: 'Tambah kapasiti',
+      id: 'rutin',
+      title: 'Jalankan hari kedua',
       detail:
-        'Jika pelanggan beredar kerana barisan terlalu panjang, upah staf atau beli naik taraf di Urus. Gaji dibayar setiap hari, jadi pastikan jualan cukup untuk menampungnya.',
-      tab: 'urus',
+        'Setiap pagi: beli stok semula (baki semalam mungkin tidak cukup), semak senarai persediaan dan buka kafe. Jika pelanggan beredar kerana barisan terlalu panjang, upah staf atau beli naik taraf di Urus, tetapi gaji dibayar setiap hari, jadi pastikan jualan cukup untuk menampungnya.',
+      tab: 'operasi',
       sub: null,
-      done: state.staff.length > 1 || state.upgrades.length > 0 || state.branches.length > 0,
+      done: state.day > 2,
     },
     {
       id: 'tahap',

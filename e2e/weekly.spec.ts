@@ -19,7 +19,7 @@ test('a week of play: weekend goals, the week summary on day 7, and past weeks i
       await expect(page.getByRole('heading', { name: GOAL_TITLE })).toBeVisible();
       await navButton(page, /Operasi/).click();
       await expect(page.getByRole('heading', { name: GOAL_TITLE })).toBeVisible();
-      await expect(page.getByText(/purata jualan 5 hari lepas \(RM[\d,.]+\) \+ (20|35)%/)).toBeVisible();
+      await expect(page.getByText(/purata jualan 5 hari lepas \(RM[\d,.]+\) \+(20|35)%/)).toBeVisible();
       await expect(page.getByText(/Anggaran jualan hari ini: ~RM[\d,.]+ — (cukup|belum cukup) untuk sasaran/)).toBeVisible();
       // The replay tracks revenue against the goal.
       await page.getByRole('button', { name: 'Buka kafe — Hari 6' }).click();

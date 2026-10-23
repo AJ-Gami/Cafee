@@ -229,7 +229,10 @@ export interface DayGoal {
   kind: GoalKind;
   /** Revenue to reach today. */
   targetSen: number;
-  /** Average daily revenue of the recent days the target is based on. */
+  /**
+   * The main café's average daily revenue over the recent days the target is based on (the
+   * target raises it, then adds each open branch's usual revenue for the day).
+   */
   baseSen: number;
   /** How many recent days that average covers. */
   baseDays: number;

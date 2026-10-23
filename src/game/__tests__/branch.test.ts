@@ -204,8 +204,8 @@ describe('locations', () => {
     const views = branchLocationViews(levelThree());
     expect(views.map((v) => [v.id, v.setupCostSen, v.dailyFixedSen, v.locked, v.requiredLevel])).toEqual([
       ['kampus', 600_000, 9_000 + 9_000 + 2_000, false, 3],
-      ['pejabat', 800_000, 9_000 + 15_000 + 2_500, false, 3],
-      ['mall', 1_000_000, 9_000 + 20_000 + 3_000, false, 3],
+      ['pejabat', 800_000, 9_000 + 12_000 + 2_500, false, 3],
+      ['mall', 1_000_000, 9_000 + 16_000 + 3_000, false, 3],
     ]);
     expect(views[0]?.dailyDepreciationSen).toBe(Math.floor(600_000 / BRANCH_LIFE_DAYS));
     const afterOne = branchLocationViews(withBranches(levelThree(), 'kampus'));
@@ -225,7 +225,7 @@ describe('running a branch', () => {
     expect(branchViews(s)[0]?.capacityPerHour).toBe(8);
     s = expectOk(setBranchBaristas(s, 'mall', 3)).state;
     expect(branchViews(s)[0]?.capacityPerHour).toBe(24);
-    expect(projectedFixedCosts(s).branchSen).toBe(3 * BRANCH_BARISTA_WAGE_SEN + 20_000 + 3_000);
+    expect(projectedFixedCosts(s).branchSen).toBe(3 * BRANCH_BARISTA_WAGE_SEN + 16_000 + 3_000);
     expect(expectFail(setBranchBaristas(s, 'mall', 4)).error).toBe('INVALID_QUANTITY');
     expect(expectFail(setBranchBaristas(s, 'mall', 0)).error).toBe('INVALID_QUANTITY');
     expect(expectFail(setBranchBaristas(s, 'mall', 3)).error).toBe('NO_CHANGE');

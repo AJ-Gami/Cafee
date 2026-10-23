@@ -28,8 +28,9 @@ export function GoalCard() {
           <Money sen={goal.targetSen} tabular={false} />
         </p>
         <p className="mt-1 text-sm text-espresso-700">
-          Capai hasil jualan sekurang-kurangnya jumlah ini hari ini: purata jualan {goal.baseDays} hari lepas (<Money sen={goal.baseSen} />) +{' '}
-          {view.raisePercent}%.
+          Capai hasil jualan sekurang-kurangnya jumlah ini hari ini: purata jualan {game.branches.length > 0 ? 'kafe utama ' : ''}
+          {goal.baseDays} hari lepas (<Money sen={goal.baseSen} />) +{view.raisePercent}%
+          {game.branches.length > 0 ? ', ditambah jualan biasa cawangan pada hari seperti ini' : ''}.
         </p>
         <div className={`mt-3 rounded-xl p-3 text-sm ${enough ? 'bg-cream-50 text-espresso-700' : 'bg-honey-100 text-honey-700'}`}>
           <p>

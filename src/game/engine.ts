@@ -1024,7 +1024,7 @@ export function startNextDay(state: GameState, day: number): EngineResult {
     phase: 'prep',
     promotion: 'none',
     todayEventId,
-    goal: dayGoalFor(nextDay, todayEventId, state.history),
+    goal: dayGoalFor(nextDay, todayEventId, state.history, state.branches.map((b) => b.location)),
     dayStart: {
       cashSen: state.cashSen,
       inventorySen: totalInventoryValue(state),

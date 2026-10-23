@@ -79,6 +79,29 @@ describe('setting a goal', () => {
     expect(dayGoalFor(6, null, history.slice(0, 5))).toMatchObject({ baseDays: 5, baseSen: 47_000, targetSen: 57_000 });
   });
 
+  it('adds what each open branch usually sells on that kind of day, and leaves closed branches out', () => {
+    // Monday to Friday: the main café sold RM400 a day, a campus branch RM300 and a mall branch RM200.
+    const history = [1, 2, 3, 4, 5].map(
+      (day) =>
+        ({
+          day,
+          eventId: null,
+          revenueSen: 40_000 + 30_000 + 20_000,
+          branches: [
+            { location: 'kampus', revenueSen: 30_000 },
+            { location: 'mall', revenueSen: 20_000 },
+          ],
+        }) as unknown as DayReport,
+    );
+    // Saturday: the campus sells 0.55 of a Saturday's footfall against 1.0–1.25 on weekdays, so
+    // about RM140 (14,080); the mall 1.65 against 0.8–1.1, about RM376 (37,598).
+    expect(dayGoalFor(6, null, history, ['kampus', 'mall'])).toEqual({ kind: 'weekend', baseSen: 40_000, baseDays: 5, targetSen: 100_000 }); // 48,000 + 14,080 + 37,598
+    expect(dayGoalFor(6, null, history, ['mall'])?.targetSen).toBe(86_000); // the campus branch has closed
+    expect(dayGoalFor(6, null, history)?.targetSen).toBe(48_000);
+    // A branch with no days yet adds nothing.
+    expect(dayGoalFor(6, null, history, ['pejabat'])?.targetSen).toBe(48_000);
+  });
+
   it('needs at least three recent days, and never asks for less than the minimum', () => {
     expect(dayGoalFor(6, null, revenues(40_000, 40_000, 40_000, 40_000, 40_000).slice(3))).toBeNull();
     expect(dayGoalFor(13, null, revenues(40_000, 40_000, 40_000))).toBeNull(); // days 1–3 are too long ago
