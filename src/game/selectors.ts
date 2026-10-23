@@ -2,7 +2,7 @@
  * Read-only views over the game state for the UI. Every number the UI shows
  * (margins, estimates, quotes, capacity) comes from here or the engine.
  */
-import { BRANCH_MIN_LEVEL, MAX_PURCHASE_QTY, MAX_STOCK_PER_INGREDIENT } from './constants';
+import { BRANCH_MIN_LEVEL, HOUR_WEIGHTS, MAX_PURCHASE_QTY, MAX_STOCK_PER_INGREDIENT } from './constants';
 import { BRANCH_LOCATION_ORDER, BRANCH_LOCATIONS, type BranchLocationDef } from './data/branches';
 import { EVENTS } from './data/events';
 import { INGREDIENTS } from './data/ingredients';
@@ -29,7 +29,7 @@ import { branchEstimate, branchFixedCosts, branchHourlyCapacity, newBranch } fro
 import { isEventVisibleInPrep, resolveEvent } from './events';
 import { GOAL_TITLE, goalRaisePercent } from './goals';
 import { installment, offerTotalInterest, remainingPrincipal, settlementQuote, type Installment, type SettlementQuote } from './loans';
-import { formatRM, marginPercent } from './money';
+import { formatRM, marginPercent, sumSen } from './money';
 import { currentLevel, isObjectiveComplete } from './objectives';
 import { candidatesForState, hourlyCapacity, staffSlots } from './staff';
 import type { ActiveLoan, BranchDayResult, BranchState, DayGoal, DayReport, GameState, IngredientId, ProductId, StaffCandidate } from './types';
@@ -403,6 +403,69 @@ export interface GoalView {
 export function todayGoalView(state: GameState): GoalView | null {
   if (state.status !== 'active' || state.phase !== 'prep' || !state.goal) return null;
   return { goal: state.goal, title: GOAL_TITLE[state.goal.kind], raisePercent: goalRaisePercent(state.goal.kind) };
+}
+
+export interface RevenueEstimate {
+  /** Revenue if every customer expected today (at every location) could be served. */
+  demandSen: number;
+  /** Revenue expected with today's stock and service capacity. */
+  expectedSen: number;
+  /** What holds the expected revenue back most, if anything does noticeably. */
+  limitedBy: 'stock' | 'capacity' | null;
+}
+
+/** Share of a location's expected buyers its service capacity can serve, hour by hour. */
+function capacityShare(perProduct: Record<ProductId, number>, perHour: number): number {
+  // Each buyer orders one drink (food is mostly an add-on).
+  const buyers = sumSen(PRODUCT_IDS.filter((id) => PRODUCTS[id].kind !== 'food').map((id) => perProduct[id]));
+  if (buyers <= 0) return 1;
+  const served = HOUR_WEIGHTS.reduce((n, w) => n + Math.min(buyers * w, perHour), 0);
+  return served / buyers;
+}
+
+/**
+ * Today's expected revenue from what the player can see while preparing: the demand estimate at
+ * each location, cut to what its staff can serve each hour and to what the stock can make
+ * (products sharing an ingredient that falls short are cut alike). Rounded to RM10.
+ */
+export function revenueEstimate(state: GameState): RevenueEstimate {
+  const price = Object.fromEntries(productViews(state).map((v) => [v.id, v.salePriceSen])) as Record<ProductId, number>;
+  const locations: { perProduct: Record<ProductId, number>; perHour: number }[] = [
+    { perProduct: dayEstimate(state).perProduct, perHour: capacityView(state).perHour },
+  ];
+  const branch = branchEstimate(state);
+  if (state.branch && branch) locations.push({ perProduct: branch.perProduct, perHour: branchHourlyCapacity(state.branch) });
+  const enabled = PRODUCT_IDS.filter((id) => state.products[id].enabled);
+
+  let demand = 0;
+  let afterCapacity = 0;
+  const served = locations.map(({ perProduct, perHour }) => {
+    const share = capacityShare(perProduct, perHour);
+    return Object.fromEntries(
+      enabled.map((id) => {
+        demand += perProduct[id] * price[id];
+        afterCapacity += perProduct[id] * share * price[id];
+        return [id, perProduct[id] * share];
+      }),
+    ) as Partial<Record<ProductId, number>>;
+  });
+  // The locations draw on one stock.
+  const need = Object.fromEntries(INGREDIENT_IDS.map((id) => [id, 0])) as Record<IngredientId, number>;
+  for (const units of served) for (const id of enabled) for (const [ing, qty] of recipeOf(id)) need[ing] += (units[id] ?? 0) * qty;
+  const ratio = (ing: IngredientId): number => (need[ing] <= 0 ? 1 : Math.min(1, state.ingredients[ing].stock / need[ing]));
+  let expected = 0;
+  for (const units of served) {
+    for (const id of enabled) expected += (units[id] ?? 0) * Math.min(...recipeOf(id).map(([ing]) => ratio(ing))) * price[id];
+  }
+
+  const capacityLoss = demand - afterCapacity;
+  const stockLoss = afterCapacity - expected;
+  const round = (sen: number): number => Math.round(sen / 1_000) * 1_000;
+  return {
+    demandSen: round(demand),
+    expectedSen: round(expected),
+    limitedBy: expected >= demand * 0.97 ? null : stockLoss >= capacityLoss ? 'stock' : 'capacity',
+  };
 }
 
 /** Preparing a Friday: the weekend goals start tomorrow. */

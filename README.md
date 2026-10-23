@@ -37,7 +37,7 @@ At level 3, *Urus → Cawangan* opens a **second branch** at a campus, an office
 
 Short of cash? *Kewangan → Pinjaman* offers bank loans (fictional terms). The money arrives at once; from the next day one installment of principal plus flat interest is charged at every close, even if cash runs short. A loan can be cancelled free on the day it is taken, or paid off early later for the remaining principal plus one day's interest.
 
-Saturdays, Sundays and public holidays come with a **sales goal**, fixed when the day starts: the average daily revenue of the last seven days (fewer in the first week) +20% (+35% on a public holiday), rounded up to RM10. It is shown on the dashboard and before opening, tracked during the replay and marked in the report; Friday warns that the weekend goals start tomorrow. An ordinary day's stock and staff rarely meet it — extra stock, a second barista or a promotion usually do. Meeting goals completes four objectives (any goal, a public-holiday goal, both Saturday and Sunday in one week, five goals).
+Saturdays, Sundays and public holidays come with a **sales goal**, fixed when the day starts: the average daily revenue of the last seven days (fewer in the first week) +20% (+35% on a public holiday), rounded up to RM10. It is shown on the dashboard and before opening next to today's revenue estimate (and what limits it: stock or staff), tracked during the replay and marked in the report; Friday warns that the weekend goals start tomorrow. An ordinary day's stock and staff rarely meet it — extra stock, a second barista or a promotion usually do. Meeting goals completes four objectives (any goal, a public-holiday goal, both Saturday and Sunday in one week, five goals).
 
 Objectives award XP. XP raises the café level (Kafe Kecil → Kafe Kejiranan → Kafe Popular → Empayar Kafe), which unlocks higher-tier upgrades and the influencer promotion. If cash stays negative after **3 consecutive closes**, the café goes bankrupt.
 
@@ -179,7 +179,7 @@ src/
 npm test
 ```
 
-There are 204 tests in 13 suites (`src/game/__tests__`):
+There are 205 tests in 13 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -195,7 +195,7 @@ There are 204 tests in 13 suites (`src/game/__tests__`):
 | `branch.test.ts` | opening (level, cash, phase, one at a time) as capital spending, a day with a branch in the totals and reconciled, the main café served first, weeks of play at each location reconciled and valid, location weekday and holiday patterns, location costs, staffing and capacity, stock plans and the checklist, same-day cancellation with refund, closing with a write-off, branch validation, v6→v7 migration |
 | `goals.test.ts` | which days have a goal, the target (average of up to seven days, +20%/+35%, rounded up, minimum, too few days), each day's goal fixed at its start and reported at its close, the Friday heads-up, goals met / perfect weekends / public holidays and their objectives, weekly goal counts, day and week share texts, v3→v4 migration, goal validation |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
-| `selectors.test.ts` | stock levels, restock plan, forecast never leaks surprises, price preview, hire capacity gain with upgrades, reputation display, chart series, compact labels |
+| `selectors.test.ts` | stock levels, restock plan, today's revenue estimate (no stock, enough stock vs the day's actual sales, a small stock, a second barista), forecast never leaks surprises, price preview, hire capacity gain with upgrades, reputation display, chart series, compact labels |
 
 ### End-to-end tests
 
@@ -253,7 +253,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the e2e su
 
 1. Support localisation (English) through a string table.
 2. Let branches have their own upgrades and a morning stock transfer, and allow more than one.
-3. Add a forecast of today's revenue next to the sales goal, so players can judge how much stock and staff the goal needs.
+3. Show the revenue estimate's range (a typical day varies by about ±10%).
 
 ### Note on dependency pinning
 

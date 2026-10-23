@@ -69,7 +69,7 @@ test('business screen: hire with confirmation, then see wages and capacity', asy
   await expect(toast(page)).toContainText('kini sebahagian pasukan');
   await expect(page.getByText('2/2')).toBeVisible();
   await page.getByRole('tab', { name: 'Objektif' }).click();
-  await expect(page.getByText('Pasukan berkembang')).toBeVisible();
+  await expect(page.getByRole('tabpanel').getByText('Pasukan berkembang')).toBeVisible();
 });
 
 test('finance and reports: charts, report history sheet and ledger', async ({ page }) => {

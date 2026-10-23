@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { purchaseStockBatch, setProductEnabled, setPromotion } from '../engine';
+import { hireStaff, purchaseStockBatch, setProductEnabled, setPromotion } from '../engine';
 import { formatRMCompact } from '../money';
 import { cumulativeByHour, historySeries } from '../reports';
 import { percentPoints, reputationPoints } from '../demand';
@@ -14,6 +14,7 @@ import {
   pricePerception,
   productViews,
   restockPlan,
+  revenueEstimate,
   visibleTodayEvent,
 } from '../selectors';
 import { expectOk, newGame, playDays, settle, stockAll, withEvent } from './helpers';
@@ -55,6 +56,32 @@ describe('selectors', () => {
     const tight = { ...someMilk, ingredients: { ...someMilk.ingredients, susu: { ...someMilk.ingredients.susu, stock: est.latte * 2 } } };
     expect(productViews(tight).find((v) => v.id === 'latte')?.stockLevel).toBe('low');
     expect(productViews(tight).find((v) => v.id === 'teh_ais')?.stockLevel).toBe('low');
+  });
+
+  it('estimates today’s revenue, cut to what stock and staff allow', () => {
+    const empty = revenueEstimate(newGame());
+    expect(empty.expectedSen).toBe(0);
+    expect(empty.demandSen).toBeGreaterThan(0);
+    expect(empty.limitedBy).toBe('stock');
+    const stocked = stockAll(newGame(), 120);
+    const est = revenueEstimate(stocked);
+    expect(est.expectedSen % 1_000).toBe(0);
+    expect(est.expectedSen).toBeLessThanOrEqual(est.demandSen);
+    expect(est.limitedBy).not.toBe('stock');
+    // Within a typical day's noise of what actually sells.
+    const actual = settle(stocked).report.revenueSen;
+    expect(Math.abs(actual - est.expectedSen) / est.expectedSen).toBeLessThan(0.25);
+    // A small stock: limited by stock, well below a full day.
+    const small = stockAll(newGame(), 6);
+    expect(revenueEstimate(small).limitedBy).toBe('stock');
+    expect(revenueEstimate(small).expectedSen).toBeLessThan(est.expectedSen * 0.7);
+    // A second barista lifts a capacity-limited day.
+    const busy = withEvent(stocked, 'food_festival');
+    const before = revenueEstimate(busy);
+    expect(before.limitedBy).toBe('capacity');
+    const candidate = hiringCandidates(busy).find((c) => c.role === 'barista')!;
+    const hired = expectOk(hireStaff(busy, candidate.id)).state;
+    expect(revenueEstimate(hired).expectedSen).toBeGreaterThan(before.expectedSen);
   });
 
   it('does not leak surprise events into the forecast', () => {

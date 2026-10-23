@@ -9,7 +9,7 @@ import { Money } from '../../components/Money';
 import { Notice } from '../../components/Notice';
 import { weekdayName } from '../../game/demand';
 import { weekEndingOn } from '../../game/reports';
-import { capacityView, dayEstimate, fixedCostsView, lastReport, prepChecklist, visibleTodayEvent } from '../../game/selectors';
+import { capacityView, dayEstimate, fixedCostsView, lastReport, prepChecklist, revenueEstimate, visibleTodayEvent } from '../../game/selectors';
 import { DayReportView } from '../reports/DayReportView';
 import { DayPlayback } from './DayPlayback';
 import { GoalCard } from './GoalCard';
@@ -26,6 +26,7 @@ function PrepView() {
   const { go } = useNav();
   const checklist = useMemo(() => prepChecklist(game), [game]);
   const estimate = useMemo(() => dayEstimate(game), [game]);
+  const revenue = useMemo(() => revenueEstimate(game), [game]);
   const cap = capacityView(game);
   const fixed = fixedCostsView(game);
   const event = visibleTodayEvent(game);
@@ -116,6 +117,25 @@ function PrepView() {
             <dt className="text-xs font-semibold uppercase text-espresso-600">Kapasiti</dt>
             <dd className="mt-0.5 text-xl font-semibold">
               {cap.perDay} <span className="text-sm font-normal text-espresso-600">({cap.perHour}/jam)</span>
+            </dd>
+          </div>
+          <div className="col-span-2 rounded-xl bg-cream-100 p-3">
+            <dt className="text-xs font-semibold uppercase text-espresso-600">Anggaran jualan</dt>
+            <dd className="mt-0.5 text-xl font-semibold">
+              ~<Money sen={revenue.expectedSen} />
+            </dd>
+            <dd className="text-sm text-espresso-600">
+              {revenue.limitedBy === 'stock'
+                ? 'Dihadkan oleh stok sekarang'
+                : revenue.limitedBy === 'capacity'
+                  ? 'Dihadkan oleh kapasiti staf'
+                  : 'Dengan stok dan kapasiti sekarang'}
+              {revenue.limitedBy ? (
+                <>
+                  {' '}
+                  (tanpa had: ~<Money sen={revenue.demandSen} />)
+                </>
+              ) : null}
             </dd>
           </div>
           <div className="col-span-2 rounded-xl bg-cream-100 p-3">
