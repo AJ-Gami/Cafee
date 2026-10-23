@@ -9,6 +9,7 @@ import { MenuScreen } from '../features/menu/MenuScreen';
 import { OperationsScreen } from '../features/operations/OperationsScreen';
 import { GameOverDialog } from '../features/settings/GameOverDialog';
 import { SettingsSheet } from '../features/settings/SettingsSheet';
+import { TutorialHint } from '../features/tutorial/TutorialHint';
 import { AppHeader } from './AppHeader';
 import { BottomNav } from './BottomNav';
 import { GameProvider, useGame } from './GameProvider';
@@ -80,6 +81,7 @@ function Shell() {
       {/* Focusable only from script: focus lands here when the control a dialog came from is gone. */}
       <main tabIndex={-1} className="space-y-4 px-4 pb-[calc(104px+env(safe-area-inset-bottom,0px))] pt-3 outline-none">
         <GlobalNotices onOpenSettings={() => setSettingsOpen(true)} />
+        <TutorialHint />
         {tab === 'utama' && <DashboardScreen />}
         {tab === 'operasi' && <OperationsScreen />}
         {tab === 'menu' && <MenuScreen />}

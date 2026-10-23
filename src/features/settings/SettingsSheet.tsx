@@ -7,6 +7,8 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Sheet } from '../../components/Modal';
 import { Notice } from '../../components/Notice';
 import { CAFE_NAME_MAX_LENGTH, SAVE_SCHEMA_VERSION } from '../../game/constants';
+import { useTutorialHidden } from '../../app/tutorial';
+import { tutorialSteps } from '../../game/tutorial';
 import { BackupCard } from './BackupCard';
 
 function formatSavedAt(iso: string | null): string {
@@ -14,6 +16,29 @@ function formatSavedAt(iso: string | null): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'tidak diketahui';
   return d.toLocaleString('ms-MY', { dateStyle: 'medium', timeStyle: 'medium' });
+}
+
+/** Bring the getting-started guide back after it was hidden. */
+function TutorialSetting({ onShown }: { onShown: () => void }) {
+  const { game } = useGame();
+  const { hidden, show } = useTutorialHidden(game.seed);
+  if (tutorialSteps(game).every((s) => s.done)) {
+    return <p className="mt-3 text-sm text-espresso-600">Panduan bermula sudah selesai.</p>;
+  }
+  if (!hidden) return null;
+  return (
+    <Button
+      className="mt-3"
+      block
+      variant="secondary"
+      onClick={() => {
+        show();
+        onShown();
+      }}
+    >
+      Tunjuk panduan bermula
+    </Button>
+  );
 }
 
 export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -127,6 +152,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
           <p className="mt-3 text-sm text-espresso-600">
             Jika baki tunai negatif selama 3 hari berturut-turut, kafe akan muflis. Capai objektif untuk naik tahap dan membuka naik taraf baharu.
           </p>
+          <TutorialSetting onShown={onClose} />
           <p className="mt-3 text-xs text-espresso-600">
             Semua harga, kos dan peristiwa ialah nilai rekaan untuk keseimbangan permainan — bukan data pasaran, analitik atau nasihat perniagaan sebenar.
           </p>

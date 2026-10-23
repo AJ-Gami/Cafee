@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarDays, ChartColumn, Coffee, Gauge, Heart, Package, ShoppingCart, Sparkles, Target, Users, Wallet } from 'lucide-react';
+import { ArrowRight, CalendarDays, ChartColumn, Coffee, Gauge, Heart, Package, ShoppingCart, Target, Users, Wallet } from 'lucide-react';
 import { useMemo } from 'react';
 import { useGame } from '../../app/GameProvider';
 import { useNav } from '../../app/navigation';
@@ -19,6 +19,7 @@ import { historySeries, servedTotal } from '../../game/reports';
 import { capacityView, currentInventoryValue, dayEstimate, ingredientViews, lastReport, objectiveViews, visibleTodayEvent } from '../../game/selectors';
 import { ProfitMiniChart } from '../finance/LazyCharts';
 import { GoalCard } from '../operations/GoalCard';
+import { TutorialCard } from '../tutorial/TutorialCard';
 
 export function DashboardScreen() {
   const { game } = useGame();
@@ -72,28 +73,7 @@ export function DashboardScreen() {
         </div>
       </section>
 
-      {isNewPlayer ? (
-        <Card>
-          <CardTitle title="Selamat datang, usahawan!" subtitle="Anda ada RM5,000 untuk membina empayar kafe anda." icon={<Sparkles className="size-5" />} />
-          <ol className="space-y-2.5 text-[15px] text-espresso-700">
-            {[
-              { n: 1, text: 'Beli stok bahan untuk setiap menu.', action: () => go('menu', 'inventori'), label: 'Beli stok' },
-              { n: 2, text: 'Semak harga jualan dan margin keuntungan.', action: () => go('menu', 'harga'), label: 'Semak menu' },
-              { n: 3, text: 'Buka kafe dan lihat pelanggan datang!', action: () => go('operasi'), label: 'Buka kafe' },
-            ].map((step) => (
-              <li key={step.n} className="flex items-center gap-3">
-                <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sm font-semibold text-sage-800">
-                  {step.n}
-                </span>
-                <span className="min-w-0 flex-1">{step.text}</span>
-                <Button size="sm" variant="secondary" onClick={step.action} aria-label={step.label}>
-                  <ArrowRight className="size-4" aria-hidden="true" />
-                </Button>
-              </li>
-            ))}
-          </ol>
-        </Card>
-      ) : null}
+      <TutorialCard />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3">

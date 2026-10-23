@@ -28,6 +28,8 @@ The build uses a relative base (`./`), so you can host `dist/` from any static h
 
 ## How to play
 
+A new player is met by a **getting-started guide** on the dashboard: five steps (buy stock, open the café, read the report, add capacity, reach level 2) that tick themselves off as the game shows them done, with a hint on the screen where each step happens. It can be hidden, and shown again from *Tetapan → Cara bermain*.
+
 1. **Prepare (Persediaan).** Buy ingredients under *Menu → Inventori* (each menu item is made from them by its recipe), set prices under *Menu → Menu & harga*, hire staff or buy upgrades under *Urus*, and choose a promotion under *Operasi*.
 2. **Open the café (Buka kafe).** The day is simulated hour by hour from 08:00 to 20:00. Footfall depends on reputation, weekday, promotion, upgrades and events. Each customer picks an item, decides whether the price is acceptable, and may be turned away by stock-outs, queues (service capacity) or closures.
 3. **Close.** Wages, rent and utilities are paid. Leftover croissant dough (≈40%) and milk (≈5%) spoil overnight; coffee and tea keep.
@@ -71,6 +73,7 @@ Daily fixed costs: rent RM120, utilities RM30 + RM0.10 per customer served (+ up
 
 ## Features
 
+- **Getting-started guide:** five steps derived from the game state (no progress stored), shown as a dashboard card and as a hint on each step's screen; hiding it is remembered per device for that game (a new game shows it again).
 - **Pricing and menu:** per-product price editor with a live margin and price-perception preview, plus menu on/off toggles.
 - **Inventory by ingredient:** coffee beans, milk, tea and croissant dough, each held at weighted-average cost. Products are made from them by recipe, so products sharing an ingredient (latte and teh ais both use milk) compete for it, and a product runs out when any of its ingredients does. Purchases with quick quantities, bulk discounts (50+ units 5%, 100+ units 8%), a one-tap restock to the forecast (each ingredient's need summed over the menu), how many of each product the stock can make, low/out-of-stock warnings and insufficient-funds states. Reports show each ingredient's purchases, use, spoilage and closing stock.
 - **Demand model:** reputation, weekday, price elasticity, promotions, upgrades, events, substitution on stock-outs and price objections, and drink→croissant add-ons.
@@ -112,6 +115,7 @@ src/
     finance/               summary charts (lazy-loaded Recharts), reports list, ledger, loans
     reports/               end-of-day report, result card, week summary, share images and buttons
     settings/              settings sheet, game-over dialog
+    tutorial/              getting-started guide card and screen hints
   game/                    ── pure TypeScript engine, no React ──
     types.ts               typed game state, reports, transactions, results
     constants.ts           balancing constants
@@ -127,6 +131,7 @@ src/
     goals.ts               weekend and public-holiday sales goals
     branch.ts              branches: location demand, staffing, upgrades, morning stock transfers
     assets.ts              fixed assets and straight-line depreciation
+    tutorial.ts            getting-started guide steps, derived from the game state
     engine.ts              player actions + once-per-day settlement
     reducer.ts             pure reducer mapping UI actions to the engine
     selectors.ts           read-only views for the UI (estimates, quotes, margins, checklists)
@@ -179,7 +184,7 @@ src/
 npm test
 ```
 
-There are 209 tests in 13 suites (`src/game/__tests__`):
+There are 211 tests in 14 suites (`src/game/__tests__`):
 
 | Suite | Covers |
 |---|---|
@@ -195,6 +200,7 @@ There are 209 tests in 13 suites (`src/game/__tests__`):
 | `branch.test.ts` | opening (level for each branch in turn, cash, phase, one per location) as capital spending, a day with a branch in the totals and reconciled, morning transfers of each branch's shortfall and the stock it keeps, branches supplied before the main café (with the short-delivery warning), weeks of play with all three branches reconciled and valid, location weekday and holiday patterns, location costs and level locks, staffing and capacity, stock plans and the checklist per branch, branch upgrades (capacity, footfall, spoilage, depreciation), same-day cancellation with refunds, closing with stock returned and a write-off, branch validation, v6→v8 and v7→v8 migration |
 | `goals.test.ts` | which days have a goal, the target (average of up to seven days, +20%/+35%, rounded up, minimum, too few days), each day's goal fixed at its start and reported at its close, the Friday heads-up, goals met / perfect weekends / public holidays and their objectives, weekly goal counts, day and week share texts, v3→v4 migration, goal validation |
 | `reducer.test.ts` | repeated OPEN_CAFE settles once, StrictMode purity, stale actions, replay watched once, feedback, reset |
+| `tutorial.test.ts` | the guide's steps ticked off through the first days, a step done out of order, reaching level 2 |
 | `selectors.test.ts` | stock levels, restock plan, today's revenue estimate (no stock, enough stock vs the day's actual sales, a small stock, a second barista), forecast never leaks surprises, price preview, hire capacity gain with upgrades, reputation display, chart series, compact labels |
 
 ### End-to-end tests
@@ -207,12 +213,13 @@ npm run test:e2e
 
 | Spec | Covers |
 |---|---|
+| `tutorial.spec.ts` | the guide card leads to the inventory, each step's hint appears on its screen and moves on as steps are done; hiding it lasts after a reload; showing it again from Settings |
 | `core-loop.spec.ts` | starting state; buy stock → edit price → open → reconciled report → refresh keeps progress → next day; double-tap settles once; no-stock confirmation; leaving the replay |
 | `ingredients.spec.ts` | ingredient cards and what each product can make from them, following its recipe as ingredients are bought; the report's ingredient movements |
 | `screens.spec.ts` | no horizontal overflow and no touch target under 40px on every screen at 360/390/768px; menu (recipe and ingredient cost), inventory (low stock, insufficient funds), staff hiring, finance charts/table/report sheet/ledger, share-card download |
 | `persistence.spec.ts` | corrupt-save backup and recovery, v1 migration, confirmed reset, bankruptcy and confirmed restart |
 | `offline.spec.ts` | after the first visit, with the network cut for both the page and the service worker, the game reloads and keeps playing (charts included); other pages on the origin are not answered with the game; manifest and icons are served |
-| `save-versions.spec.ts` | a newer-version save is left untouched (reload screen at start-up and in a running tab, with focus on it); an older-build tab that is behind cannot replace newer progress and a diverging copy is kept aside; progress further ahead in an older-build tab (v2 to v6) is adopted, and playing on saves it in the current format; a loadable backup copy is restored from Settings and focus stays in the sheet; a bankrupt café set aside is not announced as progress; a kept copy (24-letter name, no overflow) can be removed, its start-up notice goes with it and Tab/Shift+Tab stay in the sheet; a sheet keeps scrolling with the keyboard after its text is clicked; menu changes in an older-build tab do not pile up copies |
+| `save-versions.spec.ts` | a newer-version save is left untouched (reload screen at start-up and in a running tab, with focus on it); an older-build tab that is behind cannot replace newer progress and a diverging copy is kept aside; progress further ahead in an older-build tab (v2 to v7) is adopted, and playing on saves it in the current format; a loadable backup copy is restored from Settings and focus stays in the sheet; a bankrupt café set aside is not announced as progress; a kept copy (24-letter name, no overflow) can be removed, its start-up notice goes with it and Tab/Shift+Tab stay in the sheet; a sheet keeps scrolling with the keyboard after its text is clicked; menu changes in an older-build tab do not pile up copies |
 | `keyboard.spec.ts` | Tab stays inside a sheet after clicking its text; a sheet with no controls scrolls with the keyboard and shows the app's focus outline; every section of a past report opens with the keyboard; focus moves to the main content, without scrolling, when a confirmation disables the button that opened it |
 | `backup.spec.ts` | export downloads the save; import restores it after a reset; an invalid file is rejected without changes; restoring and going bankrupt again on the same day shows the game-over dialog; keyboard focus stays inside the settings sheet |
 | `loans.spec.ts` | take a loan, installments in reconciled reports, early settlement and its objective; a v2 save migrates on load |
