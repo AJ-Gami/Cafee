@@ -52,7 +52,7 @@ export function ReviewForm({ bundle, onRescan }: { bundle: ReceiptBundle; onResc
 
   const [merchant, setMerchant] = useState(receipt.merchant ?? "");
   const [date, setDate] = useState(receipt.receipt_date ?? todayKL());
-  const [total, setTotal] = useState(receipt.total_amount != null ? String(receipt.total_amount) : "");
+  const [total, setTotal] = useState(receipt.total_amount != null ? receipt.total_amount.toFixed(2) : "");
   const [note, setNote] = useState(expense?.note ?? "");
   const [categoryId, setCategoryId] = useState<string | null>(expense?.category_id ?? null);
   const [drafts, setDrafts] = useState<DraftItem[]>(() =>
@@ -60,7 +60,7 @@ export function ReviewForm({ bundle, onRescan }: { bundle: ReceiptBundle; onResc
       key: i.id,
       name: i.name,
       quantity: String(i.quantity),
-      amount: String(i.amount),
+      amount: i.amount.toFixed(2),
       taxCategoryId: i.tax_category_id,
       beneficiary: i.beneficiary,
       aiSuggested: i.ai_suggested,
@@ -421,9 +421,14 @@ export function ReviewForm({ bundle, onRescan }: { bundle: ReceiptBundle; onResc
 
       <div className="pb-safe fixed inset-x-0 bottom-0 z-[45] mx-auto flex max-w-[480px] gap-3 border-t border-line bg-white px-4 pt-3">
         <div className="flex w-full gap-3 pb-3">
-          <Button variant="danger" aria-label="Padam resit" className="w-12 shrink-0 px-0" onClick={() => setConfirmDelete(true)}>
+          <button
+            type="button"
+            aria-label="Padam resit"
+            onClick={() => setConfirmDelete(true)}
+            className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-red-200 bg-white text-red-600 active:bg-red-50"
+          >
             <Trash2 className="size-5" />
-          </Button>
+          </button>
           <Button className="flex-1" onClick={save} disabled={saving}>
             {saving ? <Spinner className="size-4" /> : null}
             Simpan

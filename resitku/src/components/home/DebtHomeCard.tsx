@@ -25,7 +25,7 @@ export function DebtHomeCard() {
         <Skeleton className="mt-2 h-7 w-28 bg-white/20" />
       ) : (
         <>
-          <p className="mt-1 text-xl font-extrabold leading-tight">{formatRM(mine.reduce((s, d) => s + d.current_balance, 0))}</p>
+          <p className="mt-1 whitespace-nowrap text-lg font-extrabold leading-tight">{formatRM(mine.reduce((s, d) => s + d.current_balance, 0))}</p>
           <p className="text-xs text-white/60">{mine.length} hutang aktif</p>
           {next ? <p className="mt-2 truncate text-xs text-white/80">Bayar dulu: {next.name}</p> : null}
           {owed.length > 0 ? (

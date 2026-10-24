@@ -98,3 +98,21 @@ Keputusan yang dibuat semasa pembinaan, bila prompt tidak menetapkan secara terp
 - **Snap resit servis/minyak** guna route scan yang sama; hasil AI mengisi kos/jumlah, tarikh, bengkel/stesen
   (dan liter jika dijumpai dalam item). Resit ditanda `confirmed` bila rekod disimpan. Jika borang dibatalkan,
   resit kekal dalam "Resit menunggu semakan" (tiada padam automatik).
+
+## Fasa 6 — Pautan, Profil penuh & kemasan
+
+- **Pratonton pautan** (`/api/links/preview`) memerlukan log masuk (bukan proksi terbuka) dan menghalang SSRF:
+  hanya http/https pada port 80/443, tiada `localhost`, dan setiap alamat DNS (termasuk selepas redirect, maks 3)
+  mesti IP awam. Hanya bahagian `<head>` dibaca (maks ~600 KB), timeout 5 saat; jika gagal, medan kosong dipulangkan.
+  (Risiko baki: *DNS rebinding* antara semakan dan fetch; diterima untuk app satu pengguna.)
+- **Share Target** guna `GET /kongsi?title&text&url`; URL diambil daripada `url` atau teks (Android). Laluan ini
+  dilindungi log masuk; proxy menyimpan pautan asal dalam `?next=` jika perlu log masuk dahulu.
+- **Paparan grid/senarai** disimpan dalam `localStorage` (pilihan per pelayar sahaja).
+- **Eksport semua data**: ZIP dengan satu CSV setiap jadual (UTF-8 + BOM supaya Excel membaca BM dengan betul).
+  Kategori sistem tidak dieksport; gambar resit dieksport melalui ZIP resit dalam tracker cukai.
+- **Import CSV**: templat boleh dimuat turun; tarikh `YYYY-MM-DD` atau `DD/MM/YYYY`; kategori tidak dikenali →
+  *Lain-lain*; baris bermasalah dipaparkan merah dalam pratonton dan dilangkau.
+- **Kategori sendiri** boleh diurus dari Profil (namakan semula / padam; belanja tidak dipadam).
+- **Pengukuhan DB**: semua fungsi ditetapkan `search_path = ''`.
+- **Semakan**: RLS diuji pada Postgres tempatan (pengguna B tidak boleh membaca/menulis data pengguna A, termasuk
+  rujukan silang seperti item ke resit orang lain). Skrin utama disemak pada lebar 360px tanpa skrol mendatar.

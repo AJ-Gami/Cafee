@@ -3,6 +3,7 @@
 import { ChevronRight, ScanLine } from "lucide-react";
 import Link from "next/link";
 import { DebtHomeCard } from "@/components/home/DebtHomeCard";
+import { LinkHomeCard } from "@/components/home/LinkHomeCard";
 import { TaxHomeCard } from "@/components/home/TaxHomeCard";
 import { VehicleHomeCard } from "@/components/home/VehicleHomeCard";
 import { useSession } from "@/components/layout/SessionProvider";
@@ -50,12 +51,6 @@ export function HomeScreen() {
           </Card>
         </Link>
 
-        <TaxHomeCard />
-        <div className="grid grid-cols-2 gap-3">
-          <DebtHomeCard />
-          <VehicleHomeCard />
-        </div>
-
         {pending && pending.length > 0 ? (
           <Link href={`/belanja/resit/${pending[0]!.id}`}>
             <Card className="flex items-center gap-3 border-accent bg-accent-soft p-3 active:opacity-80">
@@ -67,6 +62,14 @@ export function HomeScreen() {
             </Card>
           </Link>
         ) : null}
+
+        <TaxHomeCard />
+        <div className="grid grid-cols-2 gap-3">
+          <DebtHomeCard />
+          <VehicleHomeCard />
+        </div>
+        <LinkHomeCard />
+
 
         {recent.length > 0 ? (
           <section className="mt-2">

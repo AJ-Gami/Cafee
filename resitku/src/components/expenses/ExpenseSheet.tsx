@@ -32,7 +32,7 @@ export function ExpenseSheet({
   const { userId } = useSession();
   const { success, error } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
+  const [amount, setAmount] = useState(expense ? expense.amount.toFixed(2) : "");
   const [date, setDate] = useState(expense?.expense_date ?? todayKL());
   const [merchant, setMerchant] = useState(expense?.merchant ?? "");
   const [categoryId, setCategoryId] = useState<string | null>(expense?.category_id ?? null);

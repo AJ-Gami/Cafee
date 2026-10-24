@@ -32,7 +32,7 @@ export function ServiceSheet({
   const [vid, setVid] = useState(service?.vehicle_id ?? vehicleId ?? vehicles[0]?.id ?? "");
   const [date, setDate] = useState(service?.service_date ?? todayKL());
   const [odometer, setOdometer] = useState(service?.odometer != null ? String(service.odometer) : "");
-  const [cost, setCost] = useState(service ? String(service.cost) : "");
+  const [cost, setCost] = useState(service ? service.cost.toFixed(2) : "");
   const [workDone, setWorkDone] = useState(service?.work_done ?? "");
   const [workshop, setWorkshop] = useState(service?.workshop ?? "");
   const [nextKm, setNextKm] = useState(service?.next_service_km != null ? String(service.next_service_km) : "");
@@ -42,7 +42,7 @@ export function ServiceSheet({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const scan = useInlineReceiptScan((r) => {
     setReceiptId(r.id);
-    if (r.total_amount != null) setCost(String(r.total_amount));
+    if (r.total_amount != null) setCost(r.total_amount.toFixed(2));
     if (r.receipt_date) setDate(r.receipt_date);
     if (r.merchant && !workshop) setWorkshop(r.merchant);
   });

@@ -14,6 +14,16 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#F6F7F9",
     theme_color: "#FFD43B",
     categories: ["finance", "productivity"],
+    // Kongsi pautan dari app lain terus ke ResitKu (Web Share Target).
+    share_target: {
+      action: "/kongsi",
+      method: "GET",
+      params: { title: "title", text: "text", url: "url" },
+    },
+    shortcuts: [
+      { name: "Snap resit", url: "/belanja", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
+      { name: "Pautan", url: "/pautan", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
+    ],
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },

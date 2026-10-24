@@ -26,7 +26,7 @@ export function VehicleHomeCard() {
         <Skeleton className="mt-2 h-7 w-20 bg-white/20" />
       ) : (
         <>
-          <p className="mt-1 text-xl font-extrabold leading-tight">{data?.count ?? 0}</p>
+          <p className="mt-1 text-lg font-extrabold leading-tight">{data?.count ?? 0}</p>
           <p className="text-xs text-white/70">kenderaan</p>
           {data && data.reminders.length > 0 ? (
             <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-accent">

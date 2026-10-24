@@ -5,7 +5,7 @@ import Link from "next/link";
 import { loadTaxSummary } from "@/components/tax/TaxTracker";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useData } from "@/hooks/useData";
-import { currentYearKL, formatRM } from "@/lib/format";
+import { currentYearKL, formatRM, formatRMShort, round2 } from "@/lib/format";
 
 /** Kad Cukai di Home: 3 kategori dengan penggunaan tertinggi + jumlah boleh dituntut. */
 export function TaxHomeCard() {
@@ -37,11 +37,11 @@ export function TaxHomeCard() {
             const ratio = cap ? Math.min(1, r.used / cap) : 0;
             return (
               <li key={r.category.id}>
-                <div className="flex justify-between text-sm">
-                  <span className="truncate pr-2">{r.category.name}</span>
-                  <span className="shrink-0 font-semibold">
-                    {formatRM(r.used)}
-                    {cap ? <span className="font-normal text-white/60"> / {formatRM(cap)}</span> : null}
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <span className="min-w-0 truncate">{r.category.name}</span>
+                  <span className="shrink-0 text-xs font-semibold">
+                    {formatRMShort(round2(r.used))}
+                    {cap ? <span className="font-normal text-white/60"> / {formatRMShort(cap)}</span> : null}
                   </span>
                 </div>
                 {cap ? (

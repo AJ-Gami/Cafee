@@ -89,10 +89,9 @@ export function ReportView({
                   <div className="min-w-0 flex-1">
                     <p className="eyebrow text-muted">Kategori tertinggi</p>
                     <p className="truncate font-bold">{top.cat.name}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-extrabold">{formatRM(top.value)}</p>
-                    <p className="text-xs text-muted">{Math.round((top.value / total) * 100)}% daripada jumlah</p>
+                    <p className="text-xs text-muted">
+                      {formatRM(top.value)} · {Math.round((top.value / total) * 100)}% daripada jumlah
+                    </p>
                   </div>
                 </Card>
               ) : null}

@@ -43,7 +43,7 @@ export function FuelSheet({
   const { success, error } = useToast();
   const [vid, setVid] = useState(log?.vehicle_id ?? vehicleId ?? vehicles[0]?.id ?? "");
   const [date, setDate] = useState(log?.fill_date ?? todayKL());
-  const [amount, setAmount] = useState(log ? String(log.amount) : "");
+  const [amount, setAmount] = useState(log ? log.amount.toFixed(2) : "");
   const [liters, setLiters] = useState(log?.liters != null ? String(log.liters) : "");
   const [odometer, setOdometer] = useState(log?.odometer != null ? String(log.odometer) : "");
   const [station, setStation] = useState(log?.station ?? "");
@@ -52,7 +52,7 @@ export function FuelSheet({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const scan = useInlineReceiptScan((r) => {
     setReceiptId(r.id);
-    if (r.total_amount != null) setAmount(String(r.total_amount));
+    if (r.total_amount != null) setAmount(r.total_amount.toFixed(2));
     if (r.receipt_date) setDate(r.receipt_date);
     if (r.merchant && !station) setStation(r.merchant);
     const l = litersFromReceipt(r.ocr_json);
