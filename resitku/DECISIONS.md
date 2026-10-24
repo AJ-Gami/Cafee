@@ -67,3 +67,15 @@ Keputusan yang dibuat semasa pembinaan, bila prompt tidak menetapkan secara terp
   boleh dilaksanakan oleh `service_role`. Admin juga boleh menambah kategori baharu.
 - **Home**: butang + terus membuka kamera (snap resit). Kad Cukai memaparkan 3 kategori dengan peratus penggunaan
   tertinggi.
+
+## Fasa 4 — Hutang
+
+- **Baki dikemas kini oleh trigger DB** (`debt_payments_apply`) bila bayaran dicipta, diubah atau dipadam, dan
+  `status` disegerakkan daripada baki (`paid_off` bila baki ≤ 0). Memadam bayaran memulihkan baki.
+- Borang bayaran menghalang jumlah melebihi baki.
+- **"Dah bayar"** = jumlah bayaran yang dicatat dalam app (untuk *Orang Hutang Saya* dilabel "Dah terima").
+- **Streak** = bulan berturut-turut (waktu KL) yang ada sekurang-kurangnya satu bayaran, dikira untuk arah yang
+  dipaparkan. Bulan semasa yang belum ada bayaran tidak memutuskan streak sehingga bulan itu berakhir.
+- **Susunan snowball** hanya dipaparkan (bernombor) untuk *Hutang Saya*.
+- **WhatsApp**: nombor dinormalkan (`012-345 6789` → `60123456789`); mesej peringatan BM yang sopan dengan baki
+  semasa dan nama paparan pengguna.

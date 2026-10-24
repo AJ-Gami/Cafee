@@ -2,6 +2,7 @@
 
 import { ChevronRight, ScanLine } from "lucide-react";
 import Link from "next/link";
+import { DebtHomeCard } from "@/components/home/DebtHomeCard";
 import { TaxHomeCard } from "@/components/home/TaxHomeCard";
 import { useSession } from "@/components/layout/SessionProvider";
 import { useReceiptCapture } from "@/components/receipts/useReceiptCapture";
@@ -49,6 +50,9 @@ export function HomeScreen() {
         </Link>
 
         <TaxHomeCard />
+        <div className="grid grid-cols-2 gap-3">
+          <DebtHomeCard />
+        </div>
 
         {pending && pending.length > 0 ? (
           <Link href={`/belanja/resit/${pending[0]!.id}`}>
