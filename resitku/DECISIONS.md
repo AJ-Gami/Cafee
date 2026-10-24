@@ -19,3 +19,28 @@ Keputusan yang dibuat semasa pembinaan, bila prompt tidak menetapkan secara terp
 - **Profil**: kolum `plan` dan `plan_expires_at` dikunci oleh trigger; hanya `service_role` boleh mengubahnya
   (supaya pengguna tidak boleh "naik taraf" sendiri melalui API bila Fasa 7 dibina).
 - **Pengurusan data**: komponen klien menggunakan hook kecil `useData()` (tiada React Query) untuk kekal ringan.
+
+## Fasa 2 — Belanja + Resit
+
+- **`user_id default auth.uid()`** pada jadual pengguna, ditambah polisi RLS `with check (user_id = auth.uid())`.
+  Klien masih menghantar `user_id` secara eksplisit.
+- **Integriti rujukan dalam RLS**: item resit hanya boleh dipautkan ke resit sendiri; belanja hanya boleh merujuk
+  kategori sistem/sendiri dan resit sendiri (fungsi `expense_refs_ok`).
+- **`assessment_year`** diisi oleh trigger daripada tahun `receipt_date` (atau tahun semasa KL jika tarikh belum ada).
+- **`file_path` boleh null**: tuntutan manual (penyata) tanpa dokumen dilampirkan tidak mempunyai fail.
+- **Item resit dicipta semasa scan** (dengan `ai_suggested` + `ai_confidence`) supaya skrin semakan sentiasa membaca
+  daripada `receipt_items`. Semasa Simpan, item ditulis semula; `ai_suggested` kekal `true` hanya jika pengguna tidak
+  menukar kategori cukai yang dicadangkan AI.
+- **Output berstruktur**: route scan guna `messages.parse()` + `output_config.format` (skema Zod) dan bukannya
+  tool use paksa, supaya JSON sentiasa sah dan sama untuk apa-apa model dalam `RECEIPT_AI_MODEL`. Kod cukai dan
+  kategori belanja dihadkan sebagai `enum` daripada senarai semasa dalam DB.
+- **Imbas automatik** hanya berlaku sekali bila skrin semakan dibuka terus dari aliran snap (`?imbas=1`). Resit yang
+  tersekat dalam `processing` boleh dibaca semula secara manual (elak caj API berganda).
+- **Gambar dimampatkan** di browser kepada JPEG, sisi panjang 1600px. HEIC yang tidak dapat ditukar dimuat naik asal;
+  AI akan menolak format itu dan pengguna boleh isi manual.
+- **Padam**: tiada padam automatik. Memadam belanja yang ada resit menawarkan kotak semak "Padam juga resit" (tidak
+  ditanda secara lalai) dengan amaran LHDN 7 tahun. Skrin semakan resit juga ada butang Padam dengan amaran yang sama.
+- **Kiraan `ai_usage`** hanya boleh ditulis melalui fungsi `increment_ai_scan()` (security definer), supaya pengguna
+  tidak boleh menetapkan semula kiraan sendiri bila had Fasa 7 dikuatkuasakan.
+- **Carta Laporan**: palet kategori tetap 8 warna (disahkan untuk buta warna); kategori ke-9 dan seterusnya digabung
+  sebagai "Lain-lain". Warna mengikut susunan kategori, bukan kedudukan, supaya kekal stabil.
