@@ -44,3 +44,26 @@ Keputusan yang dibuat semasa pembinaan, bila prompt tidak menetapkan secara terp
   tidak boleh menetapkan semula kiraan sendiri bila had Fasa 7 dikuatkuasakan.
 - **Carta Laporan**: palet kategori tetap 8 warna (disahkan untuk buta warna); kategori ke-9 dan seterusnya digabung
   sebagai "Lain-lain". Warna mengikut susunan kategori, bukan kedudukan, supaya kekal stabil.
+
+## Fasa 3 — Cukai
+
+- **Kiraan had**: sub-had dikira dalam had induk menggunakan jumlah sub-had yang *boleh dituntut* (selepas had sub).
+  Contoh: vaksin RM1,500 (had RM1,000) menyumbang RM1,000 kepada Perubatan. Lebihan dipaparkan pada kad sub-had.
+  Item boleh juga ditanda terus pada kategori induk.
+- **"Boleh dituntut setakat ini"** (Home + tracker) = jumlah pelepasan (relief) selepas had. Potongan dan rebat
+  dipaparkan berasingan.
+- **Zakat** direkod dalam `zakat_payments` sahaja (bukan sebagai item bertanda ZAKAT), supaya tiada kiraan berganda.
+  Kategori ZAKAT tidak muncul dalam dropdown item; kadnya dalam tracker menjumlahkan `zakat_payments`.
+  Resit yang AI tanda `is_zakat` memaparkan kotak "Rekod sebagai zakat" (ditanda secara lalai) dalam skrin semakan.
+  Rekod zakat manual tidak mencipta belanja.
+- **Tuntutan manual** mencipta `receipts` (`kind = statement`, terus `confirmed`) + satu `receipt_items`, tanpa rekod
+  belanja (contohnya caruman KWSP bukan belanja harian).
+- **Eksport** dijana di klien: `jspdf` + `jspdf-autotable` (PDF) dan `jszip` (ZIP, fail diambil melalui signed URL,
+  4 muat turun serentak). Resit yang mempunyai item dalam beberapa kategori disalin ke setiap folder kategori; resit
+  tanpa kategori cukai masuk folder "Tiada kategori cukai".
+- **Admin**: `tax_relief_categories` boleh dibaca semua pengguna log masuk; tiada polisi tulis. Route
+  `/api/admin/tax-categories` (PATCH/POST) dan `/copy` menyemak `ADMIN_EMAILS` kemudian menulis dengan service role.
+  "Salin ke tahun baru" guna fungsi SQL `copy_tax_categories()` (atomik, memetakan semula `parent_id`), yang hanya
+  boleh dilaksanakan oleh `service_role`. Admin juga boleh menambah kategori baharu.
+- **Home**: butang + terus membuka kamera (snap resit). Kad Cukai memaparkan 3 kategori dengan peratus penggunaan
+  tertinggi.

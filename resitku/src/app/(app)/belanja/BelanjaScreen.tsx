@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, ImageUp, PencilLine } from "lucide-react";
+import { Camera, FileText, HandCoins, ImageUp, PencilLine } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ExpenseDetailSheet } from "@/components/expenses/ExpenseDetailSheet";
@@ -8,22 +8,30 @@ import { ExpenseList } from "@/components/expenses/ExpenseList";
 import { ExpenseSheet } from "@/components/expenses/ExpenseSheet";
 import { useReceiptCapture } from "@/components/receipts/useReceiptCapture";
 import { ReportView } from "@/components/reports/ReportView";
+import { TaxClaimSheet } from "@/components/tax/TaxClaimSheet";
+import { TaxTracker } from "@/components/tax/TaxTracker";
+import { ZakatSheet } from "@/components/tax/ZakatSheet";
 import { ActionMenu } from "@/components/ui/ActionMenu";
 import { Fab } from "@/components/ui/Fab";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { UnderlineTabs } from "@/components/ui/Segmented";
 import { useData } from "@/hooks/useData";
-import { currentMonthKL } from "@/lib/format";
+import { currentMonthKL, currentYearKL } from "@/lib/format";
 import { fetchExpenseCategories } from "@/lib/queries";
+import { fetchTaxCategories } from "@/lib/tax";
 import type { Expense, ExpenseCategory } from "@/lib/types";
 
-type Tab = "senarai" | "laporan";
+type Tab = "senarai" | "laporan" | "cukai";
 
 export function BelanjaScreen() {
   const router = useRouter();
   const params = useSearchParams();
   const tabParam = params.get("tab");
-  const tab: Tab = tabParam === "laporan" ? "laporan" : "senarai";
+  const tab: Tab = tabParam === "laporan" || tabParam === "cukai" ? tabParam : "senarai";
+  const [year, setYear] = useState(currentYearKL());
+  const [taxMenuOpen, setTaxMenuOpen] = useState(false);
+  const [taxSheet, setTaxSheet] = useState<"claim" | "zakat" | null>(null);
+  const { data: taxCategories } = useData(() => fetchTaxCategories(year), [year]);
   const [month, setMonth] = useState(currentMonthKL());
   const [version, setVersion] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -46,6 +54,7 @@ export function BelanjaScreen() {
           options={[
             { value: "senarai", label: "Senarai" },
             { value: "laporan", label: "Laporan" },
+            { value: "cukai", label: "Cukai" },
           ]}
         />
         <div className="pt-4">
@@ -58,13 +67,31 @@ export function BelanjaScreen() {
               onOpen={setDetail}
               onAdd={() => setMenuOpen(true)}
             />
-          ) : (
+          ) : tab === "laporan" ? (
             <ReportView month={month} onMonthChange={setMonth} categories={categories} version={version} />
+          ) : (
+            <TaxTracker year={year} onYearChange={setYear} version={version} onAddZakat={() => setTaxSheet("zakat")} />
           )}
         </div>
       </div>
 
-      <Fab label="Tambah belanja" onClick={() => setMenuOpen(true)} />
+      {tab === "cukai" ? (
+        <Fab label="Tambah tuntutan" onClick={() => setTaxMenuOpen(true)} />
+      ) : (
+        <Fab label="Tambah belanja" onClick={() => setMenuOpen(true)} />
+      )}
+      <ActionMenu
+        open={taxMenuOpen}
+        onClose={() => setTaxMenuOpen(false)}
+        title="Tambah tuntutan cukai"
+        items={[
+          { icon: FileText, label: "Tambah tuntutan manual", description: "Penyata premium, KWSP, SSPN, PRS…", onSelect: () => setTaxSheet("claim") },
+          { icon: HandCoins, label: "Rekod zakat / fitrah", description: "Rebat cukai", onSelect: () => setTaxSheet("zakat") },
+          { icon: Camera, label: "Snap resit", description: "Resit yang layak pelepasan", onSelect: capture.openCamera },
+        ]}
+      />
+      {taxSheet === "claim" ? <TaxClaimSheet year={year} categories={taxCategories ?? []} onClose={() => setTaxSheet(null)} onSaved={bump} /> : null}
+      {taxSheet === "zakat" ? <ZakatSheet onClose={() => setTaxSheet(null)} onSaved={bump} /> : null}
       {capture.element}
       <ActionMenu
         open={menuOpen}

@@ -73,6 +73,14 @@ Kunci server tidak pernah dihantar ke browser: semua panggilan AI dan admin dibu
    3. *Authorized redirect URIs*: `https://<project-ref>.supabase.co/auth/v1/callback`
    4. Salin *Client ID* dan *Client secret* ke Supabase → Auth → Providers → Google, kemudian aktifkan.
 
+## Admin kategori cukai
+
+- Email dalam `ADMIN_EMAILS` melihat pautan **Admin kategori cukai** dalam Profil (`/admin/cukai`).
+- Perlu `SUPABASE_SERVICE_ROLE_KEY` di pelayan (route admin menulis dengan service role selepas menyemak email).
+- Seed YA 2026 berdasarkan ringkasan pihak ketiga. Bila borang BE rasmi / Bajet 2027 diterbitkan:
+  1. Kemas kini had/nota YA 2026 jika perlu.
+  2. **Salin ke tahun baru** → YA 2027, kemudian ubah had mengikut Bajet.
+
 ## Deploy ke Vercel
 
 1. Import repo ini di Vercel.

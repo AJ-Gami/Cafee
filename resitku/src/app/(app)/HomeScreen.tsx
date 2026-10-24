@@ -1,12 +1,10 @@
 "use client";
 
-import { Camera, ChevronRight, ImageUp, PencilLine, ScanLine } from "lucide-react";
+import { ChevronRight, ScanLine } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
-import { ExpenseSheet } from "@/components/expenses/ExpenseSheet";
+import { TaxHomeCard } from "@/components/home/TaxHomeCard";
 import { useSession } from "@/components/layout/SessionProvider";
 import { useReceiptCapture } from "@/components/receipts/useReceiptCapture";
-import { ActionMenu } from "@/components/ui/ActionMenu";
 import { Card } from "@/components/ui/Card";
 import { CategoryIcon } from "@/components/ui/CategoryIcon";
 import { Fab } from "@/components/ui/Fab";
@@ -18,13 +16,10 @@ import { fetchExpenseCategories, fetchExpensesForMonth, fetchPendingReceipts } f
 export function HomeScreen() {
   const { displayName } = useSession();
   const month = currentMonthKL();
-  const [version, setVersion] = useState(0);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [manualOpen, setManualOpen] = useState(false);
   const capture = useReceiptCapture();
-  const { data: expenses, loading } = useData(() => fetchExpensesForMonth(month), [month, version]);
-  const { data: pending } = useData(fetchPendingReceipts, [version]);
-  const { data: categories, setData: setCategories } = useData(fetchExpenseCategories, []);
+  const { data: expenses, loading } = useData(() => fetchExpensesForMonth(month), [month]);
+  const { data: pending } = useData(fetchPendingReceipts, []);
+  const { data: categories } = useData(fetchExpenseCategories, []);
   const total = (expenses ?? []).reduce((s, e) => s + e.amount, 0);
   const recent = (expenses ?? []).slice(0, 4);
   const catById = new Map((categories ?? []).map((c) => [c.id, c]));
@@ -52,6 +47,8 @@ export function HomeScreen() {
             <p className="mt-1 text-sm text-muted">{expenses ? `${expenses.length} transaksi` : " "}</p>
           </Card>
         </Link>
+
+        <TaxHomeCard />
 
         {pending && pending.length > 0 ? (
           <Link href={`/belanja/resit/${pending[0]!.id}`}>
@@ -94,27 +91,9 @@ export function HomeScreen() {
         ) : null}
       </div>
 
-      <Fab label="Tambah belanja" onClick={() => setMenuOpen(true)} />
+      {/* Butang + di Home terus membuka kamera untuk snap resit. */}
+      <Fab label="Snap resit" onClick={capture.openCamera} />
       {capture.element}
-      <ActionMenu
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        title="Tambah belanja"
-        items={[
-          { icon: Camera, label: "Snap resit", description: "Ambil gambar, AI baca butirannya", onSelect: capture.openCamera },
-          { icon: ImageUp, label: "Pilih dari galeri / PDF", description: "Gambar resit atau invois PDF", onSelect: capture.openGallery },
-          { icon: PencilLine, label: "Tambah manual", description: "Isi jumlah dan kategori sendiri", onSelect: () => setManualOpen(true) },
-        ]}
-      />
-      {manualOpen ? (
-        <ExpenseSheet
-          open
-          onClose={() => setManualOpen(false)}
-          categories={categories ?? []}
-          onCategoriesChange={(list) => setCategories(() => list)}
-          onSaved={() => setVersion((v) => v + 1)}
-        />
-      ) : null}
     </main>
   );
 }

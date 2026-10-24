@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, KeyRound, LogOut, Pencil } from "lucide-react";
+import { ChevronRight, KeyRound, Landmark, LogOut, Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { useSession } from "@/components/layout/SessionProvider";
@@ -52,6 +52,7 @@ export function ProfileScreen() {
         <Card className="divide-y divide-line overflow-hidden">
           <Row icon={<Pencil className="size-4" />} label="Tukar nama paparan" onClick={() => setSheet("name")} />
           <Row icon={<KeyRound className="size-4" />} label="Tukar kata laluan" onClick={() => setSheet("password")} />
+          {session.isAdmin ? <Row icon={<Landmark className="size-4" />} label="Admin kategori cukai" onClick={() => router.push("/admin/cukai")} /> : null}
           <Row
             icon={<LogOut className="size-4" />}
             label="Log keluar"

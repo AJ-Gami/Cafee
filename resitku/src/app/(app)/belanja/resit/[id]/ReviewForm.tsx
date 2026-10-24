@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
+import { AlertCircle, HandCoins, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useSession } from "@/components/layout/SessionProvider";
@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Button, Field, Input, MoneyInput, Select } from "@/components/ui/Field";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Segmented } from "@/components/ui/Segmented";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { errorMessage, useData } from "@/hooks/useData";
@@ -67,6 +68,9 @@ export function ReviewForm({ bundle, onRescan }: { bundle: ReceiptBundle; onResc
       aiCategoryId: i.ai_suggested ? i.tax_category_id : null,
     })),
   );
+  const zakatLinked = Boolean(bundle.zakatPaymentId);
+  const [recordZakat, setRecordZakat] = useState(Boolean(ocr?.is_zakat) && !zakatLinked);
+  const [zakatType, setZakatType] = useState<"zakat" | "fitrah">(/fitrah/i.test(receipt.merchant ?? "") ? "fitrah" : "zakat");
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -166,7 +170,25 @@ export function ReviewForm({ bundle, onRescan }: { bundle: ReceiptBundle; onResc
         }
       }
 
-      success(await savedMessage(rows, taxCategories, year));
+      // Zakat: cipta rekod (rebat) jika dicadangkan, atau selaraskan rekod sedia ada.
+      if (zakatLinked && totalValue > 0) {
+        await supabase
+          .from("zakat_payments")
+          .update({ paid_date: date, amount: totalValue, institution: merchant.trim() || null })
+          .eq("id", bundle.zakatPaymentId!);
+      } else if (recordZakat && totalValue > 0) {
+        const { error: zErr } = await supabase.from("zakat_payments").insert({
+          user_id: userId,
+          paid_date: date,
+          amount: totalValue,
+          type: zakatType,
+          institution: merchant.trim() || null,
+          receipt_id: receipt.id,
+        });
+        if (zErr) throw zErr;
+      }
+
+      success(recordZakat && !zakatLinked ? `Disimpan. ${zakatType === "fitrah" ? "Fitrah" : "Zakat"} ${formatRM(totalValue)} direkod sebagai rebat.` : await savedMessage(rows, taxCategories, year));
       router.push(isStatement ? "/belanja?tab=cukai" : "/belanja");
       router.refresh();
     } catch (e) {
@@ -255,6 +277,33 @@ export function ReviewForm({ bundle, onRescan }: { bundle: ReceiptBundle; onResc
             )
           ) : null}
         </Card>
+
+        {zakatLinked ? (
+          <Card className="flex items-center gap-3 p-3 text-sm">
+            <HandCoins className="size-5 shrink-0" />
+            <p className="flex-1">Resit ini direkod sebagai zakat (rebat cukai).</p>
+          </Card>
+        ) : ocr?.is_zakat || recordZakat ? (
+          <Card className="flex flex-col gap-3 border-tax/30 p-4">
+            <label className="flex items-start gap-3">
+              <input type="checkbox" className="mt-1 size-5 accent-[#1e3a5f]" checked={recordZakat} onChange={(e) => setRecordZakat(e.target.checked)} />
+              <span>
+                <span className="block font-semibold">Rekod sebagai zakat</span>
+                <span className="block text-sm text-muted">AI mengesan ini resit zakat. Jumlahnya akan dikira sebagai rebat cukai.</span>
+              </span>
+            </label>
+            {recordZakat ? (
+              <Segmented
+                value={zakatType}
+                onChange={setZakatType}
+                options={[
+                  { value: "zakat", label: "Zakat" },
+                  { value: "fitrah", label: "Fitrah" },
+                ]}
+              />
+            ) : null}
+          </Card>
+        ) : null}
 
         <div className="flex items-baseline justify-between px-1 pt-2">
           <h2 className="font-bold">Item ({drafts.length})</h2>
