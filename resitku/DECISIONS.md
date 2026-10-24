@@ -79,3 +79,22 @@ Keputusan yang dibuat semasa pembinaan, bila prompt tidak menetapkan secara terp
 - **Susunan snowball** hanya dipaparkan (bernombor) untuk *Hutang Saya*.
 - **WhatsApp**: nombor dinormalkan (`012-345 6789` → `60123456789`); mesej peringatan BM yang sopan dengan baki
   semasa dan nama paparan pengguna.
+
+## Fasa 5 — Kenderaan
+
+- **Penyelarasan belanja dibuat oleh trigger DB**: `vehicle_services` / `fuel_logs` mempunyai kolum tambahan
+  `expense_id`. Trigger BEFORE INSERT/UPDATE mencipta atau mengemas kini belanja (kategori sistem *Kenderaan* /
+  *Minyak*, `vehicle_id` dipautkan); trigger AFTER DELETE memadam belanja itu. Memadam kenderaan memadam semua
+  rekodnya (cascade) dan belanja berkaitan.
+- `fuel_logs` mempunyai kolum tambahan `station` (nama stesen) yang menjadi "kedai" pada belanja.
+- Belanja yang dicipta daripada kenderaan **tidak boleh diedit/dipadam dari tab Belanja**; butirannya memaut ke
+  skrin kenderaan.
+- **Odometer kenderaan** naik secara automatik kepada bacaan tertinggi daripada servis/log minyak.
+- **Purata L/100km** (kaedah tangki penuh): log minyak disusun ikut odometer; liter log pertama tidak dikira kerana
+  minyak itu digunakan sebelum julat yang direkod. **Kos per km** = (servis + minyak, tolak isian pertama) ÷ jarak
+  antara bacaan odometer terendah dan tertinggi.
+- **Peringatan dalam app**: cukai jalan / insurans tamat dalam 30 hari (atau sudah tamat), dan servis seterusnya
+  dalam 30 hari atau 1,000 km (atau lewat), berdasarkan rekod servis terkini yang ada sasaran.
+- **Snap resit servis/minyak** guna route scan yang sama; hasil AI mengisi kos/jumlah, tarikh, bengkel/stesen
+  (dan liter jika dijumpai dalam item). Resit ditanda `confirmed` bila rekod disimpan. Jika borang dibatalkan,
+  resit kekal dalam "Resit menunggu semakan" (tiada padam automatik).

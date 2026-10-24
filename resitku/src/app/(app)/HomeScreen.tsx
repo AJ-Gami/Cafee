@@ -4,6 +4,7 @@ import { ChevronRight, ScanLine } from "lucide-react";
 import Link from "next/link";
 import { DebtHomeCard } from "@/components/home/DebtHomeCard";
 import { TaxHomeCard } from "@/components/home/TaxHomeCard";
+import { VehicleHomeCard } from "@/components/home/VehicleHomeCard";
 import { useSession } from "@/components/layout/SessionProvider";
 import { useReceiptCapture } from "@/components/receipts/useReceiptCapture";
 import { Card } from "@/components/ui/Card";
@@ -52,6 +53,7 @@ export function HomeScreen() {
         <TaxHomeCard />
         <div className="grid grid-cols-2 gap-3">
           <DebtHomeCard />
+          <VehicleHomeCard />
         </div>
 
         {pending && pending.length > 0 ? (
