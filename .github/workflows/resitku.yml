@@ -1,0 +1,32 @@
+name: ResitKu
+
+on:
+  push:
+    paths: ["resitku/**", ".github/workflows/resitku.yml"]
+  pull_request:
+    paths: ["resitku/**", ".github/workflows/resitku.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resitku-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: resitku
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: resitku/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
